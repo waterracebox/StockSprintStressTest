@@ -32,6 +32,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+data/*
 
 # 測試資料（可選，若需版控則移除）
 # tests/stress/data/*.json
