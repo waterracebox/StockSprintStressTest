@@ -60,10 +60,62 @@ export class GameActions {
 
   /**
    * Action 00: 等待遊戲開始
-   * Blocking 等待直到偵測到「第 X 天」或主畫面元件
+   * Blocking 等待直到偵測到倒數計時器有變動（表示遊戲正在運行）
    */
   async waitForGameStart(): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(0, "等待遊戲開始", "開始", "");
+
+    try {
+      // 策略：檢測倒數計時器是否在變動（每秒更新一次），確認遊戲正在運行中
+      // 前端顯示格式：「00:30」或「01:00」等倒數秒數
+      
+      // 1. 等待倒數計時器元素出現（無限等待）
+      const countdownLocator = this.page.locator('span').filter({ 
+        hasText: /\d{2}:\d{2}/ 
+      }).first();
+      
+      await countdownLocator.waitFor({ 
+        state: "visible", 
+        timeout: 0 // 無限等待直到元素出現
+      });
+      
+      this.log(0, "等待遊戲開始", "倒數計時器已出現", "");
+
+      // 2. 記錄第一次的倒數秒數
+      const firstCountdown = await countdownLocator.textContent();
+      this.log(0, "等待遊戲開始", "初始倒數", firstCountdown || "");
+
+      // 3. 等待 2 秒後再次檢查
+      await this.page.waitForTimeout(2000);
+
+      // 4. 取得第二次的倒數秒數
+      const secondCountdown = await countdownLocator.textContent();
+      this.log(0, "等待遊戲開始", "2秒後倒數", secondCountdown || "");
+
+      // 5. 如果兩次秒數不同，表示遊戲正在運行中
+      if (firstCountdown !== secondCountdown) {
+        this.log(0, "等待遊戲開始", "成功", `倒數計時器有變動 (${firstCountdown} -> ${secondCountdown})`);
+        return true;
+      } else {
+        this.log(0, "等待遊戲開始", "等待中", "倒數計時器尚未變動，繼續等待...");
+        
+        // 6. 如果沒有變動，每 2 秒重新檢查一次（無限循環直到遊戲開始）
+        while (true) {
+          await this.page.waitForTimeout(2000);
+          const currentCountdown = await countdownLocator.textContent();
+          
+          if (currentCountdown !== secondCountdown) {
+            this.log(0, "等待遊戲開始", "成功", `倒數計時器開始變動 (${secondCountdown} -> ${currentCountdown})`);
+            return true;
+          }
+          
+          this.log(0, "等待遊戲開始", "等待中", `倒數: ${currentCountdown}`);
+        }
+      }
+    } catch (error: any) {
+      this.log(0, "等待遊戲開始", "失敗", error.message);
+      return false;
+    }
   }
 
   /**

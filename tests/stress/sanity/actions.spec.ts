@@ -5,6 +5,55 @@ import * as fs from "fs";
 import * as path from "path";
 
 /**
+ * Action 00: 等待遊戲開始測試
+ * 
+ * 測試流程：
+ * 1. 讀取已註冊使用者
+ * 2. 執行登入
+ * 3. 呼叫 waitForGameStart（會阻塞直到遊戲開始）
+ * 4. 驗證成功偵測
+ */
+test("Action 00: Wait For Game Start", async ({ page }) => {
+  console.log("\n🔵 ========== Action 00: 等待遊戲開始 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const dataDir = path.join(__dirname, "../data");
+  const usersFilePath = path.join(dataDir, "users.json");
+
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 0);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功，準備等待遊戲開始...\n");
+
+  // 5. 執行 Action 00（會阻塞直到遊戲開始）
+  console.log("⏳ 正在等待遊戲開始...");
+  console.log("⚠️  請至 Admin 後台（https://stock-sprint-frontend.vercel.app/admin）手動按下「開始遊戲」按鈕\n");
+
+  const result = await actions.waitForGameStart();
+
+  // 6. 驗證結果
+  expect(result).toBe(true);
+  console.log("\n✅ 驗證通過：成功偵測到遊戲已開始！");
+  console.log("\n🔵 ========== Action 00: 等待遊戲開始 測試完成 ==========\n");
+});
+
+/**
  * Action 01: 註冊功能驗證測試
  */
 test("Action 01: Register", async ({ page }) => {
