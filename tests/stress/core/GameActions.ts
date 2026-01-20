@@ -1,5 +1,7 @@
 // tests/stress/core/GameActions.ts
 import { Page } from "@playwright/test";
+import * as fs from "fs";
+import * as path from "path";
 
 /**
  * 資產資料介面
@@ -71,7 +73,76 @@ export class GameActions {
    * @param pass 密碼
    */
   async register(nick: string, user: string, pass: string): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(1, "註冊", "開始", `${user}`);
+
+    try {
+      // 1. 點擊「線上開戶」按鈕開啟 Modal
+      await this.page.click('button:has-text("線上開戶")');
+      this.log(1, "註冊", "Modal已開啟", "");
+
+      // 2. 定位 Modal 容器（確保操作在 Modal 內進行）
+      const modal = this.page.locator('.adm-center-popup-body');
+      await modal.waitFor({ state: "visible", timeout: 3000 });
+
+      // 3. 填寫表單欄位（在 Modal 內部查找，避免與背景頁面衝突）
+      await modal.locator('input[id*="displayName"]').fill(nick);
+      await modal.locator('input[id*="username"]').fill(user);
+      await modal.locator('input[id*="password"]').first().fill(pass); // 密碼欄位
+      await modal.locator('input[id*="confirmPassword"]').fill(pass); // 確認密碼
+      this.log(1, "註冊", "表單已填寫", "");
+
+      // 3. 點擊送出按鈕
+      await this.page.click('button:has-text("送出")');
+      this.log(1, "註冊", "已送出", "");
+
+      // 4. 等待成功 Toast 出現（antd 的 message 組件）
+      const toastLocator = this.page.locator(".ant-message-notice-content").filter({ hasText: "註冊成功" });
+      await toastLocator.waitFor({ state: "visible", timeout: 5000 });
+      this.log(1, "註冊", "成功 Toast 已顯示", "");
+
+      // 5. 寫入 users.json
+      const dataDir = path.join(__dirname, "../data");
+      const usersFilePath = path.join(dataDir, "users.json");
+
+      // 確保目錄存在
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+
+      // 讀取現有資料
+      let users: Array<{ username: string; password: string; registered: boolean }> = [];
+      if (fs.existsSync(usersFilePath)) {
+        const content = fs.readFileSync(usersFilePath, "utf-8");
+        users = JSON.parse(content);
+      }
+
+      // 新增使用者
+      users.push({ username: user, password: pass, registered: true });
+
+      // 寫回檔案
+      fs.writeFileSync(usersFilePath, JSON.stringify(users, null, 2), "utf-8");
+      this.log(1, "註冊", "已寫入 users.json", `Total: ${users.length}`);
+
+      this.log(1, "註冊", "成功", `${user}`);
+      return true;
+    } catch (error: any) {
+      this.log(1, "註冊", "失敗", error.message);
+      
+      // 失敗時截圖存證，方便前端 Debug
+      try {
+        const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(errorDir, `action-01-register-error-${Date.now()}.png`);
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(1, "註冊", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+      
+      return false;
+    }
   }
 
   /**

@@ -39,8 +39,8 @@ export default defineConfig({
     // 無頭模式（生產環境必須開啟）
     headless: true,
 
-    // 視窗大小（模擬手機螢幕）
-    viewport: { width: 375, height: 667 },
+    // 注意：viewport 由 projects[].use 中的 devices 設定覆蓋
+    // 實際使用 iPhone 12 Pro 規格（390x844）
 
     // 操作逾時
     actionTimeout: 15 * 1000, // 15 秒
@@ -53,11 +53,18 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
 
-  // 專案配置（目前僅使用 Chromium）
+  // 專案配置（使用手機裝置模擬）
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { 
+        ...devices['iPhone 12 Pro'], // viewport: 390x844, 完整的 iPhone 12 Pro 模擬
+        // 
+        // 若需自訂尺寸，移除上方 ...devices 並啟用下方設定：
+        // viewport: { width: 375, height: 667 },
+        // userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15',
+        // deviceScaleFactor: 3,
+      },
     },
   ],
 
