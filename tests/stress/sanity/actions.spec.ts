@@ -133,3 +133,59 @@ test("Action 02: Login", async ({ page }) => {
 
   console.log("✅ 驗證通過：使用者已成功登入並跳轉至主頁");
 });
+
+/**
+ * Action 03: 換頭像功能驗證測試
+ */
+test("Action 03: Change Avatar", async ({ page }) => {
+  console.log("\n🔵 ========== Action 03: 換頭像 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 3);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功，準備換頭像...\n");
+
+  // 5. 執行換頭像（選擇第 5 號頭像）
+  const targetIndex = 5;
+  const targetAvatar = `avatar_0${targetIndex}.webp`;
+  console.log(`🎯 目標頭像: ${targetAvatar}`);
+
+  const result = await actions.changeAvatar(targetIndex);
+  expect(result).toBe(true);
+
+  // 6. 驗證頭像已更新（重新導航到主頁）
+  console.log("🔄 重新導航到主頁以驗證變更...");
+  await page.goto("/home");
+  await page.waitForTimeout(2000); // 等待頁面完全載入
+
+  // 7. 檢查右上角頭像的 src 屬性
+  const currentAvatarImg = page.locator('.adm-avatar img').first();
+  await currentAvatarImg.waitFor({ state: "visible", timeout: 5000 });
+
+  const currentSrc = await currentAvatarImg.getAttribute("src");
+  console.log(`📸 當前頭像 src: ${currentSrc}`);
+
+  // 8. 斷言驗證
+  expect(currentSrc).toContain(targetAvatar);
+
+  console.log("✅ 驗證通過：頭像已成功更新！");
+  console.log("\n🔵 ========== Action 03: 換頭像 測試完成 ==========\n");
+});
