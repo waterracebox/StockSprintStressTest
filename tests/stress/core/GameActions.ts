@@ -387,11 +387,113 @@ export class GameActions {
   // ==================== Data ====================
 
   /**
+   * 貨幣解析輔助函數
+   * 將 UI 顯示的字串（如 "$197.20", "1,000 股", "-$50.00"）轉換為數字
+   * @param text UI 文字內容
+   * @returns 解析後的數值（失敗時返回 0）
+   */
+  private parseCurrency(text: string | null): number {
+    if (!text) return 0;
+    
+    // 移除所有非數字字符（保留負號和小數點）
+    // 範例：
+    //   "$1,234.56" -> "1234.56"
+    //   "100 股" -> "100"
+    //   "-$50.00" -> "-50.00"
+    const cleaned = text.replace(/[^0-9.-]/g, '');
+    
+    const value = parseFloat(cleaned);
+    return isNaN(value) ? 0 : value; // 容錯處理：解析失敗時返回 0
+  }
+
+  /**
    * Action 04: 讀取資產
    * 解析 DOM 取得現金、股票、負債數值並 Log 輸出
    */
   async readAssets(): Promise<AssetData | null> {
-    /* TODO */ return null;
+    this.log(4, "讀取資產", "開始", "");
+
+    try {
+      // 1️⃣ 等待資產區域載入（等待 WebSocket 連線並推送資料）
+      await this.page.waitForTimeout(2000); // 給予 WebSocket 足夠時間推送資料
+      
+      const totalAssetsLabel = this.page.locator('div').filter({
+        hasText: /^總資產$/
+      }).first();
+      
+      await totalAssetsLabel.waitFor({ state: "visible", timeout: 5000 });
+      this.log(4, "讀取資產", "資產區域已載入", "");
+
+      // 2️⃣ 讀取總資產（直接使用 style 找到大字體數值）
+      // 前端結構：fontSize: '36px', fontWeight: 'bold'
+      const totalAssetsText = await this.page
+        .locator('div[style*="font-size: 36px"]')
+        .first()
+        .textContent();
+      this.log(4, "讀取資產", "總資產原始文字", totalAssetsText || "NULL");
+      const totalAssets = this.parseCurrency(totalAssetsText);
+
+      // 3️⃣ 讀取細項（使用更精確的選擇器）
+      // 策略：找到標籤為「現金」的 div，然後找它的兄弟元素（下一個 div）
+      const cashLabel = this.page.locator('div').filter({ hasText: /^現金$/ }).first();
+      const cashText = await cashLabel.locator('..').locator('div').nth(1).textContent();
+      this.log(4, "讀取資產", "現金原始文字", cashText || "NULL");
+      const cash = this.parseCurrency(cashText);
+
+      // 4️⃣ 讀取持股數量
+      const stockLabel = this.page.locator('div').filter({ hasText: /^股票$/ }).first();
+      const stockCountText = await stockLabel.locator('..').locator('div').nth(1).textContent();
+      this.log(4, "讀取資產", "股票原始文字", stockCountText || "NULL");
+      const stockCount = this.parseCurrency(stockCountText);
+
+      // 5️⃣ 讀取股票現值
+      const stockValueLabel = this.page.locator('div').filter({ hasText: /^股票現值$/ }).first();
+      const stockValueText = await stockValueLabel.locator('..').locator('div').nth(1).textContent();
+      this.log(4, "讀取資產", "股票現值原始文字", stockValueText || "NULL");
+      const stockValue = this.parseCurrency(stockValueText);
+
+      // 6️⃣ 讀取負債
+      const debtLabel = this.page.locator('div').filter({ hasText: /^負債$/ }).first();
+      const debtText = await debtLabel.locator('..').locator('div').nth(1).textContent();
+      this.log(4, "讀取資產", "負債原始文字", debtText || "NULL");
+      const debt = this.parseCurrency(debtText);
+
+      // 7️⃣ 組裝資料
+      const assetData: AssetData = {
+        totalAssets,
+        cash,
+        stockValue,
+        stockCount,
+        debt,
+      };
+
+      // 8️⃣ Log 輸出（格式化顯示）
+      this.log(
+        4,
+        "讀取資產",
+        "成功",
+        `總資產=${totalAssets.toFixed(2)}, 現金=${cash.toFixed(2)}, 股票=${stockCount}股, 市值=${stockValue.toFixed(2)}, 負債=${debt.toFixed(2)}`
+      );
+
+      return assetData;
+    } catch (error: any) {
+      this.log(4, "讀取資產", "失敗", error.message);
+
+      // 失敗時截圖存證
+      try {
+        const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(errorDir, `action-04-read-assets-error-${Date.now()}.png`);
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(4, "讀取資產", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return null;
+    }
   }
 
   /**

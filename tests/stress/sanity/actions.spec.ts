@@ -189,3 +189,63 @@ test("Action 03: Change Avatar", async ({ page }) => {
   console.log("✅ 驗證通過：頭像已成功更新！");
   console.log("\n🔵 ========== Action 03: 換頭像 測試完成 ==========\n");
 });
+
+/**
+ * Action 04: 讀取資產功能驗證測試
+ */
+test("Action 04: Read Assets", async ({ page }) => {
+  console.log("\n🔵 ========== Action 04: 讀取資產 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 4);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功，準備讀取資產...\n");
+
+  // 5. 執行 Action 04：讀取資產
+  const assets = await actions.readAssets();
+
+  // 6. 驗證結果
+  expect(assets).not.toBeNull();
+  expect(assets!.cash).not.toBeNaN();
+  expect(assets!.totalAssets).not.toBeNaN();
+  expect(assets!.stockCount).not.toBeNaN();
+  expect(assets!.stockValue).not.toBeNaN();
+  expect(assets!.debt).not.toBeNaN();
+
+  // 7. 驗證計算邏輯（總資產 = 現金 + 股票現值 - 負債）
+  const expectedTotal = assets!.cash + assets!.stockValue - assets!.debt;
+  const diff = Math.abs(assets!.totalAssets - expectedTotal);
+  
+  console.log(`\n📊 資產明細：`);
+  console.log(`   總資產: $${assets!.totalAssets.toFixed(2)}`);
+  console.log(`   現金: $${assets!.cash.toFixed(2)}`);
+  console.log(`   股票: ${assets!.stockCount} 股`);
+  console.log(`   股票現值: $${assets!.stockValue.toFixed(2)}`);
+  console.log(`   負債: $${assets!.debt.toFixed(2)}`);
+  console.log(`   計算總資產: $${expectedTotal.toFixed(2)}`);
+  console.log(`   誤差: $${diff.toFixed(2)}`);
+
+  // 允許 0.01 的浮點數誤差（考慮保證金等動態因素）
+  expect(diff).toBeLessThan(0.01);
+
+  console.log("\n✅ 驗證通過：資產讀取成功且計算正確！");
+  console.log("\n🔵 ========== Action 04: 讀取資產 測試完成 ==========\n");
+});
