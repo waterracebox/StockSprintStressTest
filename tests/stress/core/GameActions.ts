@@ -501,7 +501,105 @@ export class GameActions {
    * 解析合約列表與保證金資訊並 Log 輸出
    */
   async readContracts(): Promise<ContractData | null> {
-    /* TODO */ return null;
+    this.log(5, "讀取合約", "開始", "");
+
+    try {
+      // 1️⃣ 等待資產區域載入
+      await this.page.waitForTimeout(2000);
+
+      // 2️⃣ 檢查是否有合約（若無，直接返回空結果）
+      const marginLabel = this.page.locator('div').filter({ hasText: /^合約保證金$/ }).first();
+      const marginLabelVisible = await marginLabel.isVisible().catch(() => false);
+
+      if (!marginLabelVisible) {
+        this.log(5, "讀取合約", "成功", "當前無合約");
+        return {
+          margin: 0,
+          contracts: [],
+        };
+      }
+
+      // 3️⃣ 讀取保證金總額
+      const marginText = await marginLabel.locator('..').locator('div').nth(1).textContent();
+      this.log(5, "讀取合約", "保證金原始文字", marginText || "NULL");
+      const margin = this.parseCurrency(marginText);
+
+      // 4️⃣ 找到合約保證金區塊（包含保證金標籤的父容器）
+      const contractContainer = marginLabel.locator('../..');
+      
+      // 5️⃣ 在該區塊內找所有合約卡片（使用更精確的模式）
+      // 策略：找到包含「做多/做空」和「倍」的 div（fontSize: 11px）
+      const contractCards = contractContainer.locator('div').filter({ 
+        hasText: /^(做多|做空)\s+\d+(\.\d+)?倍$/ 
+      });
+      const count = await contractCards.count();
+      this.log(5, "讀取合約", "偵測到合約數量", count.toString());
+
+      const contracts: ContractData['contracts'] = [];
+
+      for (let i = 0; i < count; i++) {
+        // 讀取第一行：「做多/做空 X倍」
+        const firstLineText = await contractCards.nth(i).textContent();
+        this.log(5, "讀取合約", `合約 ${i + 1} 第一行`, firstLineText || "NULL");
+
+        // 正規表達式解析
+        // 說明：
+        // - (做多|做空)：捕獲群組 1，匹配「做多」或「做空」
+        // - \s+：匹配一個或多個空白字元
+        // - (\d+(\.\d+)?)：捕獲群組 2，匹配整數或小數（如 2 或 2.5）
+        //   - \d+：至少一位數字
+        //   - (\.\d+)?：可選的小數點與小數位
+        // - 倍：字面匹配
+        const regex = /(做多|做空)\s+(\d+(\.\d+)?)倍/;
+        const match = firstLineText?.match(regex);
+
+        if (!match) {
+          this.log(5, "讀取合約", `合約 ${i + 1} 解析失敗`, "格式不符");
+          continue;
+        }
+
+        const type = match[1] === '做多' ? 'LONG' : 'SHORT';
+        const leverage = parseFloat(match[2]);
+
+        // 讀取第二行：「Y張」（尋找同一個合約卡片容器內的下一個 div）
+        const secondLineLocator = contractCards.nth(i).locator('..').locator('div').filter({ hasText: /^\d+張$/ }).first();
+        const secondLineText = await secondLineLocator.textContent();
+        this.log(5, "讀取合約", `合約 ${i + 1} 第二行`, secondLineText || "NULL");
+
+        const amount = this.parseCurrency(secondLineText); // 移除「張」後解析數字
+
+        contracts.push({ type, leverage, amount });
+      }
+
+      // 5️⃣ 組裝資料
+      const contractData: ContractData = {
+        margin,
+        contracts,
+      };
+
+      // 6️⃣ Log 輸出
+      const summary = contracts.map(c => `${c.type} ${c.leverage}x ${c.amount}張`).join(', ');
+      this.log(5, "讀取合約", "成功", `保證金=${margin.toFixed(2)}, 合約=[${summary}]`);
+
+      return contractData;
+    } catch (error: any) {
+      this.log(5, "讀取合約", "失敗", error.message);
+
+      // 失敗時截圖存證
+      try {
+        const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(errorDir, `action-05-read-contracts-error-${Date.now()}.png`);
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(5, "讀取合約", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return null;
+    }
   }
 
   // ==================== Trading ====================

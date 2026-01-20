@@ -249,3 +249,67 @@ test("Action 04: Read Assets", async ({ page }) => {
   console.log("\n✅ 驗證通過：資產讀取成功且計算正確！");
   console.log("\n🔵 ========== Action 04: 讀取資產 測試完成 ==========\n");
 });
+
+/**
+ * Action 05: 讀取合約功能驗證測試
+ */
+test("Action 05: Read Contracts", async ({ page }) => {
+  console.log("\n🔵 ========== Action 05: 讀取合約 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 5);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功，準備讀取合約...\n");
+
+  // 5. 暫停測試，等待手動下單合約
+  console.log("⏸️  測試已暫停！");
+  console.log("📝 請在 Inspector 視窗中執行以下操作：");
+  console.log("   1. 切換至「合約」Tab");
+  console.log("   2. 選擇做多或做空");
+  console.log("   3. 設定槓桿（如 2 倍）");
+  console.log("   4. 買入 1 張合約");
+  console.log("   5. 確認成功後，點擊 Inspector 的 Resume 按鈕");
+  console.log("");
+  await page.pause();
+
+  // 6. 執行 Action 05：讀取合約
+  const contracts = await actions.readContracts();
+
+  // 7. 驗證結果
+  expect(contracts).not.toBeNull();
+  expect(contracts!.margin).toBeGreaterThan(0);
+  expect(contracts!.contracts.length).toBeGreaterThan(0);
+
+  const firstContract = contracts!.contracts[0];
+  expect(['LONG', 'SHORT']).toContain(firstContract.type);
+  expect(firstContract.leverage).toBeGreaterThan(0);
+  expect(firstContract.amount).toBeGreaterThan(0);
+
+  console.log(`\n📊 合約明細：`);
+  console.log(`   保證金總額: $${contracts!.margin.toFixed(2)}`);
+  console.log(`   合約數量: ${contracts!.contracts.length}`);
+  contracts!.contracts.forEach((c, idx) => {
+    console.log(`   [${idx + 1}] ${c.type === 'LONG' ? '做多' : '做空'} ${c.leverage}倍 ${c.amount}張`);
+  });
+
+  console.log("\n✅ 驗證通過：合約讀取成功且資料正確！");
+  console.log("\n🔵 ========== Action 05: 讀取合約 測試完成 ==========\n");
+});
