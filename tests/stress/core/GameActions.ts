@@ -151,7 +151,67 @@ export class GameActions {
    * @param pass 密碼
    */
   async login(user: string, pass: string): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(2, "登入", "開始", `${user}`);
+
+    try {
+      // 1. 導航至登入頁面（使用相對路徑）
+      await this.page.goto("/");
+      this.log(2, "登入", "已導航至登入頁", "");
+
+      // 2. 填寫表單欄位（使用 Form Item ID）
+      await this.page.locator('input[id*="username"]').fill(user);
+      await this.page.locator('input[id*="password"]').fill(pass);
+      this.log(2, "登入", "表單已填寫", "");
+
+      // 3. 點擊登入按鈕
+      await this.page.click('button[type="submit"]');
+      this.log(2, "登入", "已送出", "");
+
+      // 4. 驗證登入成功（等待 URL 跳轉至 /home）
+      await this.page.waitForURL("**/home", { timeout: 5000 });
+      this.log(2, "登入", "URL 已跳轉至 /home", "");
+
+      // 5. 驗證 Token 存在於 localStorage
+      const token = await this.page.evaluate(() =>
+        localStorage.getItem("token")
+      );
+      if (!token) {
+        this.log(2, "登入", "失敗", "Token 不存在於 localStorage");
+        return false;
+      }
+      this.log(
+        2,
+        "登入",
+        "Token 已驗證",
+        `Token: ${token.substring(0, 20)}...`
+      );
+
+      this.log(2, "登入", "成功", `${user}`);
+      return true;
+    } catch (error: any) {
+      this.log(2, "登入", "失敗", error.message);
+
+      // 失敗時截圖存證
+      try {
+        const errorDir = path.join(
+          __dirname,
+          "../../../test-results/action-errors"
+        );
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(
+          errorDir,
+          `action-02-login-error-${Date.now()}.png`
+        );
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(2, "登入", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   /**
