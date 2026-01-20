@@ -609,7 +609,140 @@ export class GameActions {
    * @param amount 張數
    */
   async buyStock(amount: number): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(6, "買入股票", "開始", `張數=${amount}`);
+
+    try {
+      // 1️⃣ 驗證張數合法性
+      if (amount <= 0 || !Number.isInteger(amount)) {
+        this.log(6, "買入股票", "失敗", `張數必須為正整數: ${amount}`);
+        return false;
+      }
+
+      // 2️⃣ 檢查並切換至「現貨」Tab
+      const spotTab = this.page.locator('button').filter({
+        hasText: /^現貨$/
+      }).first();
+      await spotTab.waitFor({ state: "visible", timeout: 5000 });
+
+      // 檢查 Tab 是否已選中（判斷 fill="solid" 對應的 class）
+      const isSpotActive = await spotTab.evaluate((el) => {
+        const button = el as HTMLButtonElement;
+        // Ant Design Mobile Button 的 fill="solid" 會對應到 class 'adm-button-fill-solid'
+        return button.classList.contains('adm-button-fill-solid');
+      });
+
+      if (!isSpotActive) {
+        await spotTab.click();
+        this.log(6, "買入股票", "已切換至現貨 Tab", "");
+        await this.page.waitForTimeout(500); // 等待 UI 更新
+      } else {
+        this.log(6, "買入股票", "已在現貨 Tab", "");
+      }
+
+      // 3️⃣ 檢查並切換至「買入」模式
+      // 策略：找到 DualColorSwitch 組件（自定義 div 組件，包含文字「買」或「賣」）
+      // 透過文字內容判斷當前模式
+      const switchContainer = this.page.locator('div').filter({
+        hasText: /^(買|賣)$/
+      }).first();
+      
+      await switchContainer.waitFor({ state: "visible", timeout: 3000 });
+
+      // 讀取 Switch 當前顯示的文字（「買」表示已在買入模式）
+      const switchText = await switchContainer.textContent();
+      const isBuyMode = switchText?.includes('買');
+
+      if (!isBuyMode) {
+        await switchContainer.click();
+        this.log(6, "買入股票", "已切換至買入模式", "");
+        await this.page.waitForTimeout(500);
+      } else {
+        this.log(6, "買入股票", "已在買入模式", "");
+      }
+
+      // 4️⃣ 填寫張數（先清空再輸入）
+      const amountInput = this.page.locator('input[type="number"]').first();
+      await amountInput.waitFor({ state: "visible", timeout: 3000 });
+      
+      // 清空欄位（三次點擊選取全部內容）
+      await amountInput.click({ clickCount: 3 });
+      await this.page.keyboard.press('Backspace');
+      
+      // 填入新數值
+      await amountInput.fill(amount.toString());
+      this.log(6, "買入股票", "已填寫張數", amount.toString());
+
+      // 5️⃣ 點擊「買入」按鈕
+      const buyButton = this.page.locator('button').filter({
+        hasText: /^買入$/
+      }).first();
+      await buyButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      // 確認按鈕可點擊（未 disabled）
+      const isDisabled = await buyButton.isDisabled();
+      if (isDisabled) {
+        this.log(6, "買入股票", "失敗", "買入按鈕被停用（可能資金不足或遊戲未開始）");
+        return false;
+      }
+
+      await buyButton.click();
+      this.log(6, "買入股票", "已點擊買入按鈕", "");
+
+      // 6️⃣ 等待確認對話框並點擊「確定」
+      // 對話框內容：「買入 X 張，預估支出 $XX.XX，確定嗎？」
+      // 等待對話框出現（Ant Design Mobile 使用 .adm-center-popup-body 容器）
+      await this.page.waitForTimeout(1000); // 給予充分的動畫時間
+      
+      const dialog = this.page.locator('.adm-center-popup-body').or(
+        this.page.locator('[role="dialog"]')
+      ).first();
+      await dialog.waitFor({ state: "visible", timeout: 5000 });
+      this.log(6, "買入股票", "對話框已出現", "");
+      
+      // 調試：打印對話框的完整 HTML 結構
+      const dialogHTML = await dialog.innerHTML();
+      // 分段打印避免截斷
+      const chunks = dialogHTML.match(/.{1,300}/g) || [];
+      chunks.forEach((chunk, idx) => {
+        this.log(6, "買入股票", `HTML片段${idx + 1}`, chunk);
+      });
+      
+      // 在對話框內找第二個按鈕（第一個是「取消」，第二個是「確定」）
+      // 根據 Ant Design Mobile Dialog 的結構，按鈕在 .adm-dialog-footer 內
+      const confirmButton = dialog.locator('.adm-dialog-footer button').nth(1);
+      
+      await confirmButton.waitFor({ state: "visible", timeout: 3000 });
+      const buttonText = await confirmButton.textContent();
+      this.log(6, "買入股票", "準備點擊按鈕", buttonText || "");
+      
+      await confirmButton.click();
+      this.log(6, "買入股票", "已點擊確定按鈕", "");
+
+      // 7️⃣ 等待對話框關閉（確認交易已送出）
+      await this.page.waitForTimeout(500);
+      await dialog.waitFor({ state: "hidden", timeout: 3000 });
+      this.log(6, "買入股票", "對話框已關閉", "");
+
+      this.log(6, "買入股票", "成功", `已送出買入 ${amount} 張的請求`);
+      return true;
+    } catch (error: any) {
+      this.log(6, "買入股票", "失敗", error.message);
+
+      // 失敗時截圖存證
+      try {
+        const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(errorDir, `action-06-buy-stock-error-${Date.now()}.png`);
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(6, "買入股票", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   /**

@@ -313,3 +313,82 @@ test("Action 05: Read Contracts", async ({ page }) => {
   console.log("\n✅ 驗證通過：合約讀取成功且資料正確！");
   console.log("\n🔵 ========== Action 05: 讀取合約 測試完成 ==========\n");
 });
+
+/**
+ * Action 06: 買入股票功能驗證測試
+ */
+test("Action 06: Buy Stock", async ({ page }) => {
+  console.log("\n🔵 ========== Action 06: 買入股票 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 6);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功，準備買入股票...\n");
+
+  // 5. 讀取交易前的資產狀態
+  const beforeAssets = await actions.readAssets();
+  expect(beforeAssets).not.toBeNull();
+  console.log(`📊 交易前資產：`);
+  console.log(`   現金: $${beforeAssets!.cash.toFixed(2)}`);
+  console.log(`   股票: ${beforeAssets!.stockCount} 張`);
+
+  // 6. 執行 Action 06：買入 1 張股票
+  const buyAmount = 1;
+  console.log(`\n💰 準備買入 ${buyAmount} 張股票...`);
+  
+  const buySuccess = await actions.buyStock(buyAmount);
+  expect(buySuccess).toBe(true);
+  console.log("✅ 買入請求已送出\n");
+
+  // 7. 等待伺服器更新資料（WebSocket 推送可能有延遲）
+  console.log("⏳ 等待伺服器處理交易並更新資產...");
+  await page.waitForTimeout(3000); // 增加等待時間確保 WebSocket 推送完成
+
+  // 8. 讀取交易後的資產狀態
+  const afterAssets = await actions.readAssets();
+  expect(afterAssets).not.toBeNull();
+  console.log(`\n📊 交易後資產：`);
+  console.log(`   現金: $${afterAssets!.cash.toFixed(2)}`);
+  console.log(`   股票: ${afterAssets!.stockCount} 張`);
+
+  // 9. 驗證股票數量變化
+  const stockDiff = afterAssets!.stockCount - beforeAssets!.stockCount;
+  console.log(`\n📈 股票變化: ${stockDiff > 0 ? '+' : ''}${stockDiff} 張`);
+  
+  if (stockDiff !== buyAmount) {
+    console.error(`❌ 股票數量不符！預期 +${buyAmount} 張，實際 ${stockDiff > 0 ? '+' : ''}${stockDiff} 張`);
+    console.error(`   可能原因：1) 伺服器處理延遲 2) 交易失敗但未顯示錯誤 3) WebSocket 推送遺失`);
+  }
+  expect(stockDiff).toBe(buyAmount);
+
+  // 10. 驗證現金減少（買入應該扣款）
+  const cashDiff = afterAssets!.cash - beforeAssets!.cash;
+  console.log(`💸 現金變化: ${cashDiff > 0 ? '+' : ''}${cashDiff.toFixed(2)}`);
+  
+  if (cashDiff >= 0) {
+    console.error(`❌ 現金未減少！買入股票應該扣款，但現金反而增加或不變`);
+  }
+  expect(cashDiff).toBeLessThan(0); // 現金應該減少
+
+  console.log("\n✅ 驗證通過：股票買入成功且資產變化正確！");
+  console.log("\n🔵 ========== Action 06: 買入股票 測試完成 ==========\n");
+});
+
