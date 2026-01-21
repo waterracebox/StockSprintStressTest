@@ -750,7 +750,125 @@ export class GameActions {
    * @param amount 張數
    */
   async sellStock(amount: number): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(7, "賣出股票", "開始", `張數=${amount}`);
+
+    try {
+      // 1️⃣ 驗證張數合法性
+      if (amount <= 0 || !Number.isInteger(amount)) {
+        this.log(7, "賣出股票", "失敗", `張數必須為正整數: ${amount}`);
+        return false;
+      }
+
+      // 2️⃣ 檢查並切換至「現貨」Tab
+      const spotTab = this.page.locator('button').filter({
+        hasText: /^現貨$/
+      }).first();
+      await spotTab.waitFor({ state: "visible", timeout: 5000 });
+
+      // 檢查 Tab 是否已選中
+      const isSpotActive = await spotTab.evaluate((el) => {
+        const button = el as HTMLButtonElement;
+        return button.classList.contains('adm-button-fill-solid');
+      });
+
+      if (!isSpotActive) {
+        await spotTab.click();
+        this.log(7, "賣出股票", "已切換至現貨 Tab", "");
+        await this.page.waitForTimeout(500);
+      } else {
+        this.log(7, "賣出股票", "已在現貨 Tab", "");
+      }
+
+      // 3️⃣ 檢查並切換至「賣出」模式
+      // 策略：找到 DualColorSwitch 組件，透過文字內容判斷當前模式
+      const switchContainer = this.page.locator('div').filter({
+        hasText: /^(買|賣)$/
+      }).first();
+      
+      await switchContainer.waitFor({ state: "visible", timeout: 3000 });
+
+      // 讀取 Switch 當前顯示的文字（「賣」表示已在賣出模式）
+      const switchText = await switchContainer.textContent();
+      this.log(7, "賣出股票", "Switch 當前文字", switchText || "NULL");
+      const isSellMode = switchText?.includes('賣');
+
+      if (!isSellMode) {
+        await switchContainer.click();
+        this.log(7, "賣出股票", "已切換至賣出模式", "");
+        await this.page.waitForTimeout(800); // 增加等待時間確保 UI 更新
+      } else {
+        this.log(7, "賣出股票", "已在賣出模式", "");
+      }
+
+      // 4️⃣ 填寫張數（先清空再輸入）
+      const amountInput = this.page.locator('input[type="number"]').first();
+      await amountInput.waitFor({ state: "visible", timeout: 3000 });
+      
+      // 清空欄位（三次點擊選取全部內容）
+      await amountInput.click({ clickCount: 3 });
+      await this.page.keyboard.press('Backspace');
+      
+      // 填入新數值
+      await amountInput.fill(amount.toString());
+      this.log(7, "賣出股票", "已填寫張數", amount.toString());
+
+      // 5️⃣ 點擊「賣出」按鈕
+      const sellButton = this.page.locator('button').filter({
+        hasText: /^賣出$/
+      }).first();
+      await sellButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      // 確認按鈕可點擊（未 disabled）
+      const isDisabled = await sellButton.isDisabled();
+      if (isDisabled) {
+        this.log(7, "賣出股票", "失敗", "賣出按鈕被停用（可能持股不足或遊戲未開始）");
+        return false;
+      }
+
+      await sellButton.click();
+      this.log(7, "賣出股票", "已點擊賣出按鈕", "");
+
+      // 6️⃣ 等待確認對話框並點擊「確定」
+      await this.page.waitForTimeout(1000);
+      
+      const dialog = this.page.locator('.adm-center-popup-body').or(
+        this.page.locator('[role="dialog"]')
+      ).first();
+      await dialog.waitFor({ state: "visible", timeout: 5000 });
+      this.log(7, "賣出股票", "對話框已出現", "");
+      
+      // 在對話框內找「确定」按鈕（注意是簡體字）
+      const confirmButton = dialog.locator('text=确定').first();
+      
+      await confirmButton.waitFor({ state: "visible", timeout: 3000 });
+      await confirmButton.click();
+      this.log(7, "賣出股票", "已點擊確定按鈕", "");
+
+      // 7️⃣ 等待對話框關閉（確認交易已送出）
+      await this.page.waitForTimeout(500);
+      await dialog.waitFor({ state: "hidden", timeout: 3000 });
+      this.log(7, "賣出股票", "對話框已關閉", "");
+
+      this.log(7, "賣出股票", "成功", `已送出賣出 ${amount} 張的請求`);
+      return true;
+    } catch (error: any) {
+      this.log(7, "賣出股票", "失敗", error.message);
+
+      // 失敗時截圖存證
+      try {
+        const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(errorDir, `action-07-sell-stock-error-${Date.now()}.png`);
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(7, "賣出股票", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   /**
