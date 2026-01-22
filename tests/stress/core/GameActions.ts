@@ -756,15 +756,190 @@ export class GameActions {
   /**
    * Action 08: 買入合約
    * @param type 做多 (LONG) 或做空 (SHORT)
-   * @param lev 槓桿倍數
-   * @param amt 合約張數
+   * @param leverage 槓桿倍數
+   * @param amount 合約張數
    */
   async buyContract(
     type: "LONG" | "SHORT",
-    lev: number,
-    amt: number
+    leverage: number,
+    amount: number
   ): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(8, "買入合約", "開始", `${type}, ${leverage}x, ${amount}張`);
+
+    try {
+      // 1️⃣ 驗證參數合法性
+      if (amount <= 0 || !Number.isInteger(amount)) {
+        this.log(8, "買入合約", "失敗", `張數必須為正整數: ${amount}`);
+        return false;
+      }
+      if (leverage <= 0) {
+        this.log(8, "買入合約", "失敗", `槓桿倍數必須為正數: ${leverage}`);
+        return false;
+      }
+
+      // 2️⃣ 檢查並切換至「合約」Tab
+      const contractTab = this.page.locator('button').filter({
+        hasText: /^合約$/
+      }).first();
+      await contractTab.waitFor({ state: "visible", timeout: 5000 });
+
+      // 檢查 Tab 是否已選中
+      const isContractActive = await contractTab.evaluate((el) => {
+        const button = el as HTMLButtonElement;
+        return button.classList.contains('adm-button-fill-solid');
+      });
+
+      if (!isContractActive) {
+        await contractTab.click();
+        this.log(8, "買入合約", "已切換至合約 Tab", "");
+        await this.page.waitForTimeout(500);
+      } else {
+        this.log(8, "買入合約", "已在合約 Tab", "");
+      }
+
+      // 3️⃣ 檢查並切換合約方向（做多/做空）
+      // 策略：找到對應的按鈕並檢查是否已選中
+      const directionText = type === 'LONG' ? '做多' : '做空';
+      const directionButton = this.page.locator('button').filter({
+        hasText: new RegExp(`^${directionText}`)
+      }).first();
+
+      await directionButton.waitFor({ state: "visible", timeout: 3000 });
+
+      // 檢查該方向按鈕是否已選中（fill="solid"）
+      const isDirectionActive = await directionButton.evaluate((el) => {
+        const button = el as HTMLButtonElement;
+        return button.classList.contains('adm-button-fill-solid');
+      });
+
+      if (!isDirectionActive) {
+        await directionButton.click();
+        this.log(8, "買入合約", `已切換至${directionText}`, "");
+        await this.page.waitForTimeout(500);
+      } else {
+        this.log(8, "買入合約", `已在${directionText}模式`, "");
+      }
+
+      // 4️⃣ 填寫槓桿和張數（簡化策略：直接用 visible inputs）
+      // 策略：在合約 UI 區塊內找到所有 visible 的 input
+      const contractSection = this.page.locator('div').filter({
+        has: this.page.locator('button:has-text("下單")')
+      });
+      
+      // 取得所有可見的 number input（過濾掉 Slider 隱藏的）
+      const visibleInputs = contractSection.locator('input[type="number"]:visible');
+      const inputCount = await visibleInputs.count();
+      this.log(8, "買入合約", "偵測到可見輸入框數量", inputCount.toString());
+      
+      // 測試：先填第一個為槓桿，第二個為張數
+      const leverageInput = visibleInputs.nth(0);
+      await leverageInput.waitFor({ state: "visible", timeout: 3000 });
+      
+      await leverageInput.focus();
+      await this.page.keyboard.press('Control+A');
+      await this.page.keyboard.type(leverage.toString(), { delay: 100 });
+      await leverageInput.blur();
+      this.log(8, "買入合約", "已填寫第一個輸入框（槓桿？）", `${leverage}`);
+      await this.page.waitForTimeout(800);
+
+      // 5️⃣ 填寫第二個輸入框為張數
+      const amountInput = visibleInputs.nth(1);
+      await amountInput.waitFor({ state: "visible", timeout: 3000 });
+      
+      await amountInput.focus();
+      await this.page.keyboard.press('Control+A');
+      await this.page.keyboard.type(amount.toString(), { delay: 100 });
+      await amountInput.blur();
+      this.log(8, "買入合約", "已填寫第二個輸入框（張數？）", `${amount}`);
+      await this.page.waitForTimeout(800);
+
+      // 6️⃣ 點擊「下單 (隔日結算)」按鈕
+      const submitButton = this.page.locator('button').filter({
+        hasText: /下單/
+      }).first();
+      await submitButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      // Debug: 檢查按鈕狀態
+      const isDisabled = await submitButton.isDisabled();
+      this.log(8, "買入合約", "下單按鈕狀態", `disabled=${isDisabled}`);
+      
+      // Debug: 讀取當前輸入框的值
+      const currentLeverage = await leverageInput.inputValue();
+      const currentAmount = await amountInput.inputValue();
+      this.log(8, "買入合約", "當前輸入值", `槓桿=${currentLeverage}, 張數=${currentAmount}`);
+      
+      // Debug: 檢查保證金顯示
+      const marginDisplay = await this.page.locator('div').filter({
+        hasText: /保證金:/
+      }).first().textContent().catch(() => "無法讀取");
+      this.log(8, "買入合約", "保證金顯示", marginDisplay);
+      
+      if (isDisabled) {
+        this.log(8, "買入合約", "失敗", "下單按鈕被停用（可能保證金不足或遊戲未開始）");
+        
+        // 額外 Debug：截圖當前狀態
+        try {
+          const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+          if (!fs.existsSync(errorDir)) {
+            fs.mkdirSync(errorDir, { recursive: true });
+          }
+          const screenshotPath = path.join(errorDir, `action-08-button-disabled-${Date.now()}.png`);
+          await this.page.screenshot({ path: screenshotPath, fullPage: true });
+          this.log(8, "買入合約", "已截圖 (Debug)", screenshotPath);
+        } catch (screenshotError) {
+          // 截圖失敗不影響主流程
+        }
+        
+        return false;
+      }
+
+      await submitButton.click();
+      this.log(8, "買入合約", "已點擊下單按鈕", "");
+
+      // 7️⃣ 等待確認對話框並點擊「確定」
+      await this.page.waitForTimeout(1000);
+      
+      const dialog = this.page.locator('.adm-center-popup-body').or(
+        this.page.locator('[role="dialog"]')
+      ).first();
+      await dialog.waitFor({ state: "visible", timeout: 5000 });
+      this.log(8, "買入合約", "對話框已出現", "");
+      
+      // 點擊「確定」按鈕（第二個按鈕）
+      const confirmButton = dialog.locator('.adm-dialog-footer button').nth(1);
+      await confirmButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      const buttonText = await confirmButton.textContent();
+      this.log(8, "買入合約", "準備點擊按鈕", buttonText || "");
+      
+      await confirmButton.click();
+      this.log(8, "買入合約", "已點擊確定按鈕", "");
+
+      // 8️⃣ 等待對話框關閉
+      await this.page.waitForTimeout(500);
+      await dialog.waitFor({ state: "hidden", timeout: 3000 });
+      this.log(8, "買入合約", "對話框已關閉", "");
+
+      this.log(8, "買入合約", "成功", `已送出 ${type} ${leverage}x ${amount}張 的合約請求`);
+      return true;
+    } catch (error: any) {
+      this.log(8, "買入合約", "失敗", error.message);
+
+      // 失敗時截圖存證
+      try {
+        const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(errorDir, `action-08-buy-contract-error-${Date.now()}.png`);
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(8, "買入合約", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   /**
