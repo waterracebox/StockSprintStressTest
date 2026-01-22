@@ -947,7 +947,98 @@ export class GameActions {
    * 取消所有未結算的合約
    */
   async cancelAllContracts(): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(9, "撤銷合約", "開始", "");
+
+    try {
+      // 1️⃣ 檢查當前是否有合約（避免無效操作）
+      const beforeData = await this.readContracts();
+      if (!beforeData || beforeData.contracts.length === 0) {
+        this.log(9, "撤銷合約", "略過", "當前無合約可撤銷");
+        return true; // 無合約視為成功
+      }
+
+      this.log(9, "撤銷合約", "檢測到合約", `數量=${beforeData.contracts.length}`);
+
+      // 2️⃣ 確認在「合約」Tab（State Enforcement）
+      const contractTab = this.page.locator('button').filter({
+        hasText: /^合約$/
+      }).first();
+      await contractTab.waitFor({ state: "visible", timeout: 5000 });
+
+      const isContractActive = await contractTab.evaluate((el) => {
+        const button = el as HTMLButtonElement;
+        return button.classList.contains('adm-button-fill-solid');
+      });
+
+      if (!isContractActive) {
+        await contractTab.click();
+        this.log(9, "撤銷合約", "已切換至合約 Tab", "");
+        await this.page.waitForTimeout(500);
+      }
+
+      // 3️⃣ 尋找並點擊「撤銷今日訂單」按鈕
+      const cancelButton = this.page.locator('button').filter({
+        hasText: /撤銷今日訂單/
+      }).first();
+      await cancelButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      // 檢查按鈕是否可點擊
+      const isDisabled = await cancelButton.isDisabled();
+      if (isDisabled) {
+        this.log(9, "撤銷合約", "失敗", "撤銷按鈕不可用（可能無未結算合約）");
+        return false;
+      }
+
+      await cancelButton.click();
+      this.log(9, "撤銷合約", "已點擊撤銷按鈕", "");
+
+      // 4️⃣ 等待確認對話框並點擊「確定」
+      await this.page.waitForTimeout(1000);
+      
+      const dialog = this.page.locator('.adm-center-popup-body').or(
+        this.page.locator('[role="dialog"]')
+      ).first();
+      await dialog.waitFor({ state: "visible", timeout: 5000 });
+      this.log(9, "撤銷合約", "對話框已出現", "");
+      
+      // 點擊「確定」按鈕（第二個按鈕）
+      const confirmButton = dialog.locator('.adm-dialog-footer button').nth(1);
+      await confirmButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      const buttonText = await confirmButton.textContent();
+      this.log(9, "撤銷合約", "準備點擊確定", buttonText || "");
+      
+      await confirmButton.click();
+      this.log(9, "撤銷合約", "已點擊確定按鈕", "");
+
+      // 5️⃣ 等待對話框關閉
+      await this.page.waitForTimeout(500);
+      await dialog.waitFor({ state: "hidden", timeout: 3000 });
+      this.log(9, "撤銷合約", "對話框已關閉", "");
+
+      // 6️⃣ 等待 WebSocket 更新（3 秒）
+      await this.page.waitForTimeout(3000);
+
+      this.log(9, "撤銷合約", "成功", `已撤銷 ${beforeData.contracts.length} 筆合約`);
+      return true;
+    } catch (error: any) {
+      this.log(9, "撤銷合約", "失敗", error.message);
+
+      // 失敗時截圖存證
+      try {
+        const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(errorDir, `action-09-cancel-contracts-error-${Date.now()}.png`);
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(9, "撤銷合約", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   // ==================== Loan ====================

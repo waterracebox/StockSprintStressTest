@@ -498,3 +498,83 @@ test("Action 08: Buy Contract", async ({ page }) => {
   console.log("\n✅ 驗證通過：合約買入成功且資料變化正確！");
   console.log("\n🔵 ========== Action 08: 買入合約 測試完成 ==========\n");
 });
+
+// ==================== Action 09: 撤銷今日合約 ====================
+test("Action 09: Cancel All Contracts", async ({ page }) => {
+  console.log("\n🔵 ========== Action 09: 撤銷今日合約 測試開始 ==========\n");
+
+  // 讀取已註冊使用者
+  const dataDir = path.join(__dirname, "../data");
+  const usersFilePath = path.join(dataDir, "users.json");
+
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 初始化 GameActions
+  const actions = new GameActions(page, 9);
+
+  // 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功\n");
+
+  // 1️⃣ 準備階段：先買入一筆合約（確保有合約可撤銷）
+  console.log("📋 準備階段：先買入合約...");
+  const buySuccess = await actions.buyContract('LONG', 3, 1);
+  expect(buySuccess).toBe(true);
+
+  // 等待 WebSocket 更新
+  await page.waitForTimeout(3000);
+
+  // 2️⃣ 讀取合約資料（Before）
+  console.log("\n📋 步驟 1: 讀取撤銷前的合約資料...");
+  const beforeData = await actions.readContracts();
+  expect(beforeData).not.toBeNull();
+  expect(beforeData!.contracts.length).toBeGreaterThan(0);
+
+  const beforeCount = beforeData!.contracts.length;
+  const beforeMargin = beforeData!.margin;
+  console.log(`   撤銷前：合約數=${beforeCount}, 保證金=${beforeMargin.toFixed(2)}`);
+
+  // 3️⃣ 執行撤銷操作
+  console.log("\n📋 步驟 2: 執行撤銷操作...");
+  const cancelSuccess = await actions.cancelAllContracts();
+  expect(cancelSuccess).toBe(true);
+
+  // 4️⃣ 等待 WebSocket 更新
+  console.log("\n⏳ 等待 WebSocket 更新狀態...");
+  await page.waitForTimeout(3000);
+
+  // 5️⃣ 讀取合約資料（After）
+  console.log("\n📋 步驟 3: 讀取撤銷後的合約資料...");
+  const afterData = await actions.readContracts();
+  expect(afterData).not.toBeNull();
+
+  const afterCount = afterData!.contracts.length;
+  const afterMargin = afterData!.margin;
+  console.log(`   撤銷後：合約數=${afterCount}, 保證金=${afterMargin.toFixed(2)}`);
+
+  // 6️⃣ 驗證結果
+  console.log("\n🔍 驗證結果...");
+
+  // ✅ 合約數量應該減少
+  console.log(`   ✔ 檢查合約數量變化：${beforeCount} → ${afterCount}`);
+  expect(afterCount).toBe(0);
+
+  // ✅ 保證金應該歸還（變為 0）
+  console.log(`   ✔ 檢查保證金變化：${beforeMargin.toFixed(2)} → ${afterMargin.toFixed(2)}`);
+  expect(afterMargin).toBe(0);
+
+  console.log("\n✅ 驗證通過：合約已全部撤銷且保證金已歸還！");
+  console.log("\n🔵 ========== Action 09: 撤銷今日合約 測試完成 ==========\n");
+});
