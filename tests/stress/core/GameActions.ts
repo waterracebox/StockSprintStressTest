@@ -1709,9 +1709,38 @@ export class GameActions {
   /**
    * Action 15: 等待少數決開始
    * Blocking 等待直到 Minority Overlay 可見
+   * 
+   * 使用邏輯：與 Action 12 (waitForQuizStart) 完全相同
+   * - 偵測標題文字「⚖️ 全場少數決」
+   * - 使用無限 timeout 進行阻塞式等待
+   * - 當 Admin 後台發布少數決題目時自動解除等待
+   * 
+   * @returns 成功偵測到少數決開始時回傳 true
    */
   async waitForMinorityStart(): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(15, "等待少數決開始", "開始", "偵測 Minority Overlay...");
+
+    try {
+      // 1️⃣ 偵測少數決標題（使用無限 timeout 進行阻塞式等待）
+      // 前端路徑: frontend/src/components/minigame/games/Minority/MinorityUserView.tsx (Line 172)
+      // 標題結構: <div style={{ fontWeight: 800, fontSize: 18 }}>⚖️ 全場少數決</div>
+      const minorityTitle = this.page.getByText("⚖️ 全場少數決").first();
+      
+      this.log(15, "等待少數決開始", "等待中", "請從 Admin 後台發布少數決題目...");
+      
+      // 使用 timeout: 0 實現無限等待（直到元素出現）
+      await minorityTitle.waitFor({ 
+        state: "visible", 
+        timeout: 0 
+      });
+      
+      this.log(15, "等待少數決開始", "成功", "Minority Overlay 已顯示");
+      return true;
+
+    } catch (error: any) {
+      this.log(15, "等待少數決開始", "失敗", error.message);
+      return false;
+    }
   }
 
   /**

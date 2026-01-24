@@ -1160,3 +1160,60 @@ test("Action 14: Wait Quiz Result and Report", async ({ page }) => {
 
   console.log("\n🔵 ========== Action 14: 問答結果報告 測試完成 ==========\n");
 });
+
+/**
+ * Action 15: 等待少數決開始功能驗證測試
+ */
+test("Action 15: Wait for Minority Start", async ({ page }) => {
+  console.log("\n🔵 ========== Action 15: 等待少數決開始 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 15);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功");
+
+  // 5. 【核心測試】等待少數決開始（Blocking）
+  console.log("\n⏳ 等待少數決開始（Action 15）...");
+  console.log("   📢 請執行以下操作：");
+  console.log("   1️⃣ 前往 Admin 後台 (/admin)");
+  console.log("   2️⃣ 切換到「小遊戲」Tab");
+  console.log("   3️⃣ 選擇「少數決 (Minority)」遊戲");
+  console.log("   4️⃣ 點擊「洗牌 (Shuffle)」");
+  console.log("   5️⃣ 點擊「下一題 (Next Question)」發布題目");
+  console.log("   ⚠️  測試會阻塞直到偵測到少數決 Overlay 顯示");
+  console.log("");
+  
+  const minorityDetected = await actions.waitForMinorityStart();
+  
+  // 6. 驗證
+  expect(minorityDetected).toBe(true);
+  console.log("\n✅ 驗證結果：");
+  console.log("   ✓ 少數決 Overlay 已偵測到");
+  console.log("   ✓ 標題「⚖️ 全場少數決」已顯示");
+
+  // 7. 額外驗證：確認 Overlay 元素存在
+  console.log("\n🔍 額外驗證 Overlay 元素...");
+  const minorityTitle = page.getByText("⚖️ 全場少數決").first();
+  await expect(minorityTitle).toBeVisible({ timeout: 3000 });
+  console.log("   ✓ Overlay 標題元素已確認可見");
+
+  console.log("\n🔵 ========== Action 15: 等待少數決開始 測試完成 ==========\n");
+});
