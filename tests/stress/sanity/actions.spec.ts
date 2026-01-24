@@ -895,3 +895,83 @@ test("Action 19: Interact With Loan Shark", async ({ page }) => {
   console.log("\n✅ 驗證通過：與地下錢莊主人互動成功且正確關閉 Modal！");
   console.log("\n🔵 ========== Action 19: 與地下錢莊主人互動 測試完成 ==========\n");
 });
+
+/**
+ * Action 12: 等待問答開始功能驗證測試
+ * 
+ * 測試流程：
+ * 1. 讀取已註冊使用者並登入
+ * 2. 呼叫 waitForQuizStart（會 Blocking 直到 Admin 發布題目）
+ * 3. 驗證 Overlay 已正確顯示
+ * 
+ * ⚠️ 注意：此測試需要手動配合 Admin 後台操作！
+ */
+test("Action 12: Wait for Quiz Start", async ({ page }) => {
+  console.log("\n🔵 ========== Action 12: 等待問答開始 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const dataDir = path.join(__dirname, "../data");
+  const usersFilePath = path.join(dataDir, "users.json");
+
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 12);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功，準備等待問答開始...\n");
+
+  // 5. 執行 Action 12：等待問答開始（Blocking）
+  console.log("⏳ 正在等待 Quiz 開始...");
+  console.log("⚠️  請至 Admin 後台（https://stock-sprint-frontend.vercel.app/admin）執行以下操作：");
+  console.log("   1. 切換至「小遊戲 (Mini-Game)」Tab");
+  console.log("   2. 切換至「問答 (Quiz)」子 Tab");
+  console.log("   3. 選擇一個題目（使用 Dropdown）");
+  console.log("   4. 按下「📢 發布題目（自動開始）」按鈕");
+  console.log("");
+
+  const result = await actions.waitForQuizStart();
+
+  // 6. 驗證結果
+  expect(result).toBe(true);
+  console.log("\n✅ 驗證通過：Quiz Overlay 已成功偵測！");
+
+  // 7. 額外驗證：檢查 Overlay 內是否包含關鍵 UI 元素
+  console.log("\n🔍 執行額外驗證...");
+
+  // 檢查「收起」按鈕（QuizUserView.tsx 標準元件）
+  const collapseButton = page.locator('button').filter({
+    hasText: /^收起$/
+  }).first();
+  const hasCollapseButton = await collapseButton.isVisible().catch(() => false);
+  
+  if (hasCollapseButton) {
+    console.log("   ✓ 「收起」按鈕已顯示");
+  }
+
+  // 檢查狀態列（顯示總資產與股價）
+  const statusBar = page.locator('div').filter({
+    hasText: /總資產.*股價/
+  }).first();
+  const hasStatusBar = await statusBar.isVisible().catch(() => false);
+  
+  if (hasStatusBar) {
+    console.log("   ✓ 狀態列已顯示");
+  }
+
+  console.log("\n✅ 所有驗證項目通過！");
+  console.log("\n🔵 ========== Action 12: 等待問答開始 測試完成 ==========\n");
+});

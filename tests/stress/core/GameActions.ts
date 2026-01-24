@@ -1414,9 +1414,87 @@ export class GameActions {
   /**
    * Action 12: 等待問答開始
    * Blocking 等待直到 Quiz Overlay 可見
+   * 
+   * 策略：
+   * 1. 使用無限 timeout 等待「機智問答」文字出現（表示 Overlay 已彈出）
+   * 2. 若 Overlay 已存在但未可見（理論上不會發生，但做雙重檢查）
+   * 3. 返回 true 表示成功偵測
+   * 
+   * 前端對應元件：
+   * - QuizUserView.tsx（全螢幕覆蓋層，包含「🧠 機智問答」標題）
+   * - TradingBar.tsx（小遊戲按鈕，橘色表示有遊戲進行中）
    */
   async waitForQuizStart(): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(12, "等待問答開始", "開始", "Blocking 等待 Quiz Overlay 出現");
+
+    try {
+      // 1️⃣ 主要策略：等待「機智問答」文字出現（表示 Overlay 已自動彈出）
+      // 使用 timeout: 0 表示無限等待，直到 Admin 發布題目為止
+      const quizTitleLocator = this.page.getByText('🧠 機智問答').first();
+      
+      this.log(12, "等待問答開始", "等待中", "請至 Admin 後台發布問答題目...");
+      
+      await quizTitleLocator.waitFor({ 
+        state: "visible", 
+        timeout: 0 // 無限等待（Blocking）
+      });
+
+      this.log(12, "等待問答開始", "Overlay 已出現", "");
+
+      // 2️⃣ 雙重檢查：確認 Overlay 確實可見且在最前層（z-index 9999）
+      const overlayContainer = this.page.locator('[style*="z-index: 9999"]').filter({
+        has: quizTitleLocator
+      }).first();
+
+      const isVisible = await overlayContainer.isVisible().catch(() => false);
+      
+      if (!isVisible) {
+        this.log(12, "等待問答開始", "警告", "標題可見但容器不可見，嘗試點擊小遊戲按鈕");
+        
+        // 備用策略：點擊 TradingBar 的「小遊戲」按鈕（若 Overlay 未自動彈出）
+        const miniGameButton = this.page.locator('button').filter({
+          has: this.page.locator('img[alt="小遊戲"]')
+        }).first();
+        
+        const buttonVisible = await miniGameButton.isVisible().catch(() => false);
+        if (buttonVisible) {
+          await miniGameButton.click();
+          await this.page.waitForTimeout(1000); // 等待動畫
+        }
+      }
+
+      // 3️⃣ 最終驗證：確認 Overlay 內容包含「機智問答」（使用 .first() 避免 strict mode violation）
+      const finalCheck = await this.page.getByText('🧠 機智問答').first().isVisible();
+      
+      if (!finalCheck) {
+        this.log(12, "等待問答開始", "失敗", "Overlay 未正確顯示");
+        return false;
+      }
+
+      this.log(12, "等待問答開始", "成功", "Quiz Overlay 已完整載入");
+      return true;
+
+    } catch (error: any) {
+      this.log(12, "等待問答開始", "失敗", error.message);
+      
+      // 失敗時截圖存證
+      try {
+        const screenshotDir = path.join(__dirname, "../../test-results/action-errors");
+        if (!fs.existsSync(screenshotDir)) {
+          fs.mkdirSync(screenshotDir, { recursive: true });
+        }
+        const screenshotPath = path.join(
+          screenshotDir,
+          `action-12-waitForQuizStart-error-${Date.now()}.png`
+        );
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(12, "等待問答開始", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   /**
