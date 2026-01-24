@@ -1255,3 +1255,94 @@ test("Action 15: Wait for Minority Start", async ({ page }) => {
 
   console.log("\n🔵 ========== Action 15: 等待少數決開始 測試完成 ==========\n");
 });
+
+/**
+ * Action 17: 借錢週轉流程功能驗證測試
+ */
+test("Action 17: Borrow and Return Flow", async ({ page }) => {
+  console.log("\n🟢 ========== Action 17: 借錢週轉流程 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 2. 實例化 GameActions
+  const actions = new GameActions(page, 17);
+
+  // 3. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功");
+
+  // 4. 等待少數決開始（Action 15）
+  console.log("\n⏳ 等待少數決開始（Action 15）...");
+  console.log("   📢 請執行以下操作：");
+  console.log("   1️⃣ 前往 Admin 後台 (/admin)");
+  console.log("   2️⃣ 切換到「小遊戲」Tab");
+  console.log("   3️⃣ 選擇「少數決 (Minority)」遊戲");
+  console.log("   4️⃣ 點擊「洗牌 (Shuffle)」");
+  console.log("   5️⃣ 點擊「下一題 (Next Question)」發布題目");
+  console.log("");
+
+  const minorityDetected = await actions.waitForMinorityStart();
+  expect(minorityDetected).toBe(true);
+  console.log("✅ 少數決遊戲已開始");
+
+  // 5. 讀取借款前的資產
+  console.log("\n📊 讀取借款前資產...");
+  const beforeAssets = await actions.readAssets();
+  expect(beforeAssets).not.toBeNull();
+  console.log(`   💰 借款前現金: $${beforeAssets!.cash}`);
+  console.log(`   💸 借款前負債: $${beforeAssets!.debt}`);
+
+  // 6. 執行 Action 17：借錢週轉流程
+  console.log("\n🔄 執行 Action 17：借錢週轉流程...");
+  const flowSuccess = await actions.closeBorrowAndReturn();
+  expect(flowSuccess).toBe(true);
+  console.log("✅ 借錢週轉流程完成");
+
+  // 7. 讀取借款後的資產
+  console.log("\n📊 讀取借款後資產...");
+  const afterAssets = await actions.readAssets();
+  expect(afterAssets).not.toBeNull();
+  console.log(`   💰 借款後現金: $${afterAssets!.cash}`);
+  console.log(`   💸 借款後負債: $${afterAssets!.debt}`);
+
+  // 8. 驗證借款結果
+  console.log("\n🔍 驗證借款結果...");
+  const expectedCash = beforeAssets!.cash + 300;
+  const expectedDebt = beforeAssets!.debt + 300;
+
+  expect(afterAssets!.cash).toBe(expectedCash);
+  console.log(`   ✓ 現金增加 $300 (預期: ${expectedCash}, 實際: ${afterAssets!.cash})`);
+  
+  expect(afterAssets!.debt).toBe(expectedDebt);
+  console.log(`   ✓ 負債增加 $300 (預期: ${expectedDebt}, 實際: ${afterAssets!.debt})`);
+
+  // 9. 驗證小遊戲 Overlay 已重新顯示
+  console.log("\n🎮 驗證小遊戲 Overlay 已恢復...");
+  const minorityTitle = page.locator('div').filter({
+    hasText: /全場少數決/
+  }).first();
+  await expect(minorityTitle).toBeVisible({ timeout: 3000 });
+  console.log("   ✓ 小遊戲 Overlay 已成功恢復顯示");
+
+  console.log("\n🟢 ========== Action 17: 借錢週轉流程 測試完成 ==========\n");
+  console.log("📋 測試總結：");
+  console.log(`   ✓ 成功收起小遊戲`);
+  console.log(`   ✓ 成功開啟地下錢莊`);
+  console.log(`   ✓ 成功借款 $300`);
+  console.log(`   ✓ 成功關閉地下錢莊`);
+  console.log(`   ✓ 成功恢復小遊戲 Overlay`);
+  console.log(`   ✓ 資產變動驗證通過\n`);
+});
