@@ -1060,7 +1060,239 @@ export class GameActions {
     action: "BORROW" | "REPAY",
     amount: number
   ): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(11, "借/還錢", "開始", `動作=${action}, 金額=${amount}`);
+
+    try {
+      // 1️⃣ 驗證金額合法性
+      if (amount <= 0) {
+        this.log(11, "借/還錢", "失敗", `金額必須為正數: ${amount}`);
+        return false;
+      }
+
+      // 2️⃣ 確認 Modal 已開啟（若未開啟則先開啟）
+      const modalTitle = this.page.locator('span').filter({
+        hasText: /^地下錢莊$/
+      }).first();
+
+      const isModalVisible = await modalTitle.isVisible().catch(() => false);
+
+      if (!isModalVisible) {
+        this.log(11, "借/還錢", "Modal 未開啟", "嘗試自動開啟");
+        const openSuccess = await this.openLoanShark();
+        if (!openSuccess) {
+          this.log(11, "借/還錢", "失敗", "無法開啟地下錢莊");
+          return false;
+        }
+      }
+
+      this.log(11, "借/還錢", "Modal 已確認開啟", "");
+
+      // 3️⃣ 檢查並切換模式（借/還）
+      // 策略：DualColorSwitch 是自定義組件，結構為包含文字「借」或「還」的 div
+      // 需要檢查當前顯示的文字來判斷模式
+      const modeSwitchContainer = this.page.locator('div').filter({
+        hasText: /^(借|還)$/
+      }).first();
+      
+      await modeSwitchContainer.waitFor({ state: "visible", timeout: 3000 });
+      
+      // 讀取當前顯示的文字（「借」表示借款模式，「還」表示還款模式）
+      const switchText = await modeSwitchContainer.textContent();
+      const isBorrowMode = switchText?.includes('借');
+      const needSwitch = (action === "BORROW" && !isBorrowMode) || (action === "REPAY" && isBorrowMode);
+
+      if (needSwitch) {
+        await modeSwitchContainer.click();
+        this.log(11, "借/還錢", "已切換模式", `從 ${isBorrowMode ? '借' : '還'} 切換至 ${action === 'BORROW' ? '借' : '還'}`);
+        await this.page.waitForTimeout(500); // 等待 UI 更新
+      } else {
+        this.log(11, "借/還錢", "模式已正確", `當前為 ${action === 'BORROW' ? '借款' : '還款'} 模式`);
+      }
+
+      // 4️⃣ 填寫金額
+      // 策略：找到包含 "金額 (元)" 標籤的區塊，然後找到可見且寬度為 60px 的輸入框
+      // 避免選到 Slider 的隱藏輸入框
+      const amountSection = this.page.locator('div').filter({
+        hasText: /金額.*元/
+      });
+      
+      // 找到所有可見的 number input
+      const allInputs = amountSection.locator('input[type="number"]:visible');
+      const inputCount = await allInputs.count();
+      this.log(11, "借/還錢", "偵測到輸入框數量", inputCount.toString());
+      
+      // 找到寬度為 60px 的輸入框（根據前端 style）
+      let amountInput = null;
+      for (let i = 0; i < inputCount; i++) {
+        const input = allInputs.nth(i);
+        const width = await input.evaluate((el: HTMLInputElement) => {
+          return window.getComputedStyle(el).width;
+        });
+        this.log(11, "借/還錢", `輸入框 ${i} 寬度`, width);
+        
+        if (width === '60px') {
+          amountInput = input;
+          this.log(11, "借/還錢", "找到目標輸入框", `index=${i}`);
+          break;
+        }
+      }
+      
+      if (!amountInput) {
+        // Fallback: 使用第二個輸入框（第一個是 Slider）
+        amountInput = allInputs.nth(1);
+        this.log(11, "借/還錢", "使用 Fallback", "nth(1)");
+      }
+
+      await amountInput.waitFor({ state: "visible", timeout: 3000 });
+      
+      // Debug: 讀取當前值
+      const currentValue = await amountInput.inputValue();
+      this.log(11, "借/還錢", "輸入前的值", currentValue);
+      
+      // 方法：先清空，再輸入，觸發事件
+      await amountInput.evaluate((el: HTMLInputElement, value: string) => {
+        // 1. 先清空
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value'
+        )?.set;
+        
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(el, '');
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        
+        // 2. 設定新值
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(el, value);
+        }
+        
+        // 3. 觸發事件
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('blur', { bubbles: true }));
+      }, amount.toString());
+      
+      // Debug: 驗證輸入後的值
+      await this.page.waitForTimeout(500);
+      const newValue = await amountInput.inputValue();
+      this.log(11, "借/還錢", "輸入後的值", newValue);
+      this.log(11, "借/還錢", "已填寫金額", amount.toString());
+
+      // 5️⃣ 點擊確認按鈕（按鈕文字為「借款」或「還款」）
+      const buttonText = action === "BORROW" ? "借款" : "還款";
+      const submitButton = this.page.locator('button').filter({
+        hasText: new RegExp(`^${buttonText}$`)
+      }).first();
+
+      await submitButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      // 檢查按鈕是否被停用
+      const isDisabled = await submitButton.isDisabled();
+      if (isDisabled) {
+        this.log(11, "借/還錢", "失敗", "按鈕被停用（可能金額超過限制或現金/負債不足）");
+        return false;
+      }
+
+      await submitButton.click();
+      this.log(11, "借/還錢", "已點擊確認按鈕", "");
+
+      // 6️⃣ 等待確認對話框並點擊「確定」
+      await this.page.waitForTimeout(1000);
+      
+      const dialog = this.page.locator('.adm-center-popup-body').or(
+        this.page.locator('[role="dialog"]')
+      ).first();
+      await dialog.waitFor({ state: "visible", timeout: 5000 });
+      this.log(11, "借/還錢", "對話框已出現", "");
+      
+      // 點擊「確定」按鈕（第二個按鈕）
+      const confirmButton = dialog.locator('.adm-dialog-footer button').nth(1);
+      await confirmButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      const confirmButtonText = await confirmButton.textContent();
+      this.log(11, "借/還錢", "準備點擊按鈕", confirmButtonText || "");
+      
+      await confirmButton.click();
+      this.log(11, "借/還錢", "已點擊確定按鈕", "");
+
+      // 7️⃣ 等待對話框關閉（確認交易已送出）
+      await this.page.waitForTimeout(500);
+      await dialog.waitFor({ state: "hidden", timeout: 3000 });
+      this.log(11, "借/還錢", "對話框已關閉", "");
+
+      // 8️⃣ 等待交易成功 Toast（antd-mobile 的 Toast 元件）
+      // 注意：Toast 可能很快消失，使用較短的 timeout
+      const toastLocator = this.page.locator(".adm-toast").filter({
+        hasText: /成功/
+      }).first();
+
+      const toastVisible = await toastLocator.isVisible().catch(() => false);
+      if (toastVisible) {
+        this.log(11, "借/還錢", "成功 Toast 已顯示", "");
+      } else {
+        // Toast 可能已消失，檢查是否有錯誤訊息
+        const errorToast = this.page.locator(".adm-toast").filter({
+          hasText: /失敗|不足|錯誤/
+        }).first();
+        const hasError = await errorToast.isVisible().catch(() => false);
+        
+        if (hasError) {
+          const errorMsg = await errorToast.textContent();
+          this.log(11, "借/還錢", "失敗", `交易失敗: ${errorMsg}`);
+          return false;
+        }
+      }
+
+      // 9️⃣ 關閉 Modal（點擊右上角 X 按鈕）
+      // 策略：找到 CloseOutline 圖標的按鈕
+      const closeButton = this.page.locator('span[role="img"]').filter({
+        hasText: /close/i
+      }).or(
+        this.page.locator('svg').filter({
+          has: this.page.locator('path[d*="M"]') // SVG 路徑特徵
+        })
+      ).first();
+
+      const closeButtonVisible = await closeButton.isVisible().catch(() => false);
+      if (closeButtonVisible) {
+        await closeButton.click();
+        this.log(11, "借/還錢", "已點擊關閉按鈕", "");
+        
+        // 等待 Modal 關閉
+        await this.page.waitForTimeout(500);
+        const isModalClosed = await modalTitle.isHidden().catch(() => true);
+        
+        if (isModalClosed) {
+          this.log(11, "借/還錢", "Modal 已關閉", "");
+        } else {
+          this.log(11, "借/還錢", "警告", "Modal 未完全關閉，但交易已完成");
+        }
+      } else {
+        this.log(11, "借/還錢", "警告", "找不到關閉按鈕，但交易已完成");
+      }
+
+      this.log(11, "借/還錢", "成功", `${action === 'BORROW' ? '借款' : '還款'} $${amount}`);
+      return true;
+
+    } catch (error: any) {
+      this.log(11, "借/還錢", "失敗", error.message);
+
+      // 失敗時截圖存證
+      try {
+        const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(errorDir, `action-11-handle-loan-error-${Date.now()}.png`);
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(11, "借/還錢", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   // ==================== Quiz ====================

@@ -637,3 +637,178 @@ test("Action 10: Open Loan Shark", async ({ page }) => {
   console.log("\n✅ 驗證通過：地下錢莊 Modal 已成功開啟！");
   console.log("\n🔵 ========== Action 10: 開啟地下錢莊 測試完成 ==========\n");
 });
+
+/**
+ * Action 11: 借/還錢功能驗證測試 (借款)
+ */
+test("Action 11: Handle Loan (Borrow)", async ({ page }) => {
+  console.log("\n🔵 ========== Action 11: 借/還錢 (借款) 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 11);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功\n");
+
+  // 5. 讀取交易前的資產狀態
+  console.log("📊 讀取交易前資產...");
+  const beforeAssets = await actions.readAssets();
+  expect(beforeAssets).not.toBeNull();
+
+  console.log(`   現金: $${beforeAssets!.cash.toFixed(2)}`);
+  console.log(`   負債: $${beforeAssets!.debt.toFixed(2)}`);
+
+  // 6. 執行 Action 11：借款 300
+  const borrowAmount = 300;
+  console.log(`\n💰 準備借款 $${borrowAmount}...`);
+
+  const borrowSuccess = await actions.handleLoan('BORROW', borrowAmount);
+  expect(borrowSuccess).toBe(true);
+  console.log("✅ 借款請求已完成\n");
+
+  // 7. 等待伺服器更新資料（WebSocket 推送）
+  console.log("⏳ 等待伺服器處理交易並更新資產...");
+  await page.waitForTimeout(3000);
+
+  // 8. 讀取交易後的資產狀態
+  console.log("📊 讀取交易後資產...");
+  const afterAssets = await actions.readAssets();
+  expect(afterAssets).not.toBeNull();
+
+  console.log(`   現金: $${afterAssets!.cash.toFixed(2)}`);
+  console.log(`   負債: $${afterAssets!.debt.toFixed(2)}`);
+
+  // 9. 驗證資產變化
+  console.log("\n🔍 驗證資產變化...");
+
+  const cashDiff = afterAssets!.cash - beforeAssets!.cash;
+  const debtDiff = afterAssets!.debt - beforeAssets!.debt;
+
+  console.log(`   現金變化: ${cashDiff > 0 ? '+' : ''}${cashDiff.toFixed(2)}`);
+  console.log(`   負債變化: ${debtDiff > 0 ? '+' : ''}${debtDiff.toFixed(2)}`);
+
+  // 斷言驗證
+  expect(cashDiff).toBeCloseTo(borrowAmount, 0.01);
+  expect(debtDiff).toBeCloseTo(borrowAmount, 0.01);
+
+  // 10. 驗證 Modal 已關閉
+  console.log("\n🔍 驗證 Modal 已關閉...");
+  const modalTitle = page.locator('span').filter({ hasText: /^地下錢莊$/ }).first();
+  const isModalClosed = await modalTitle.isHidden().catch(() => true);
+
+  if (isModalClosed) {
+    console.log("   ✓ Modal 已正確關閉");
+  } else {
+    console.warn("   ⚠ Modal 仍然可見（可能是測試環境延遲）");
+  }
+
+  expect(isModalClosed).toBe(true);
+
+  console.log("\n✅ 驗證通過：借款成功且資產變化正確！");
+  console.log("\n🔵 ========== Action 11: 借/還錢 (借款) 測試完成 ==========\n");
+});
+
+/**
+ * Action 11: 借/還錢功能驗證測試 (還款)
+ */
+test("Action 11: Handle Loan (Repay)", async ({ page }) => {
+  console.log("\n🔵 ========== Action 11: 借/還錢 (還款) 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 11);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功\n");
+
+  // 5. 確保有負債（先借款）
+  console.log("📋 準備階段：確保有負債...");
+  const borrowSuccess = await actions.handleLoan('BORROW', 300);
+  expect(borrowSuccess).toBe(true);
+  await page.waitForTimeout(3000);
+
+  // 6. 讀取還款前的資產狀態
+  console.log("\n📊 讀取還款前資產...");
+  const beforeAssets = await actions.readAssets();
+  expect(beforeAssets).not.toBeNull();
+  expect(beforeAssets!.debt).toBeGreaterThan(0); // 確保有負債
+
+  console.log(`   現金: $${beforeAssets!.cash.toFixed(2)}`);
+  console.log(`   負債: $${beforeAssets!.debt.toFixed(2)}`);
+
+  // 7. 執行 Action 11：還款 200
+  const repayAmount = 200;
+  console.log(`\n💸 準備還款 $${repayAmount}...`);
+
+  const repaySuccess = await actions.handleLoan('REPAY', repayAmount);
+  expect(repaySuccess).toBe(true);
+  console.log("✅ 還款請求已完成\n");
+
+  // 8. 等待伺服器更新資料
+  console.log("⏳ 等待伺服器處理交易並更新資產...");
+  await page.waitForTimeout(3000);
+
+  // 9. 讀取還款後的資產狀態
+  console.log("📊 讀取還款後資產...");
+  const afterAssets = await actions.readAssets();
+  expect(afterAssets).not.toBeNull();
+
+  console.log(`   現金: $${afterAssets!.cash.toFixed(2)}`);
+  console.log(`   負債: $${afterAssets!.debt.toFixed(2)}`);
+
+  // 10. 驗證資產變化
+  console.log("\n🔍 驗證資產變化...");
+
+  const cashDiff = afterAssets!.cash - beforeAssets!.cash;
+  const debtDiff = afterAssets!.debt - beforeAssets!.debt;
+
+  console.log(`   現金變化: ${cashDiff > 0 ? '+' : ''}${cashDiff.toFixed(2)}`);
+  console.log(`   負債變化: ${debtDiff > 0 ? '+' : ''}${debtDiff.toFixed(2)}`);
+
+  // 斷言驗證（還款時現金減少、負債減少）
+  expect(cashDiff).toBeCloseTo(-repayAmount, 0.01);
+  expect(debtDiff).toBeCloseTo(-repayAmount, 0.01);
+
+  // 11. 驗證 Modal 已關閉
+  console.log("\n🔍 驗證 Modal 已關閉...");
+  const modalTitle = page.locator('span').filter({ hasText: /^地下錢莊$/ }).first();
+  const isModalClosed = await modalTitle.isHidden().catch(() => true);
+
+  expect(isModalClosed).toBe(true);
+
+  console.log("\n✅ 驗證通過：還款成功且資產變化正確！");
+  console.log("\n🔵 ========== Action 11: 借/還錢 (還款) 測試完成 ==========\n");
+});
