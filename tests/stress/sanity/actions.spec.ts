@@ -578,3 +578,62 @@ test("Action 09: Cancel All Contracts", async ({ page }) => {
   console.log("\n✅ 驗證通過：合約已全部撤銷且保證金已歸還！");
   console.log("\n🔵 ========== Action 09: 撤銷今日合約 測試完成 ==========\n");
 });
+
+/**
+ * Action 10: 開啟地下錢莊功能驗證測試
+ */
+test("Action 10: Open Loan Shark", async ({ page }) => {
+  console.log("\n🔵 ========== Action 10: 開啟地下錢莊 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！請先執行 Action 01 註冊測試建立使用者資料。");
+  }
+
+  // 2. 取得第一個使用者
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 3. 實例化 GameActions
+  const actions = new GameActions(page, 10);
+
+  // 4. 執行登入
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功，準備開啟地下錢莊...\n");
+
+  // 5. 執行 Action 10：開啟地下錢莊
+  const result = await actions.openLoanShark();
+  expect(result).toBe(true);
+
+  // 6. 驗證 Modal 元素存在
+  console.log("🔍 驗證 Modal 元素...");
+  
+  // 驗證標題
+  const modalTitle = page.locator('span').filter({ hasText: /^地下錢莊$/ }).first();
+  await expect(modalTitle).toBeVisible({ timeout: 3000 });
+  console.log("   ✓ 標題文字已顯示");
+
+  // 驗證商人頭像（Optional）
+  const merchantImage = page.locator('img[alt*="沈梟"], img[src*="merchant"]').first();
+  const isImageVisible = await merchantImage.isVisible().catch(() => false);
+  if (isImageVisible) {
+    console.log("   ✓ 商人頭像已載入");
+  }
+
+  // 驗證對話區塊存在
+  const dialogueBox = page.locator('div').filter({ hasText: /沈梟|借款|利率/ }).first();
+  const isDialogueVisible = await dialogueBox.isVisible().catch(() => false);
+  if (isDialogueVisible) {
+    console.log("   ✓ 對話區塊已顯示");
+  }
+
+  console.log("\n✅ 驗證通過：地下錢莊 Modal 已成功開啟！");
+  console.log("\n🔵 ========== Action 10: 開啟地下錢莊 測試完成 ==========\n");
+});

@@ -1100,6 +1100,83 @@ export class GameActions {
   }
 
   /**
+   * Action 10: 開啟地下錢莊
+   * 驗證 Modal 是否正確開啟
+   */
+  async openLoanShark(): Promise<boolean> {
+    this.log(10, "開啟地下錢莊", "開始", "");
+
+    try {
+      // 1️⃣ 確認在主頁面（/home）
+      if (!this.page.url().includes('/home')) {
+        this.log(10, "開啟地下錢莊", "失敗", "當前頁面不是主頁");
+        return false;
+      }
+
+      // 2️⃣ 定位「地下錢莊」按鈕
+      // 策略：找到包含地下錢莊圖示的按鈕（位於 TradingBar 區塊）
+      const loanButton = this.page.locator('button').filter({
+        has: this.page.locator('img[alt="地下錢莊"]')
+      }).first();
+
+      await loanButton.waitFor({ state: "visible", timeout: 5000 });
+      this.log(10, "開啟地下錢莊", "已定位按鈕", "");
+
+      // 3️⃣ 點擊按鈕
+      await loanButton.click();
+      this.log(10, "開啟地下錢莊", "已點擊按鈕", "");
+
+      // 4️⃣ 等待 Modal 出現（驗證標題文字「地下錢莊」）
+      const modalTitle = this.page.locator('span').filter({
+        hasText: /^地下錢莊$/
+      }).first();
+
+      await modalTitle.waitFor({ state: "visible", timeout: 5000 });
+      this.log(10, "開啟地下錢莊", "Modal 已顯示", "");
+
+      // 5️⃣ 驗證 URL Hash 已變更（前端使用 Hash 錨點管理 Modal）
+      await this.page.waitForTimeout(500); // 等待 Hash 更新
+      const currentUrl = this.page.url();
+      
+      if (!currentUrl.includes('#loanshark')) {
+        this.log(10, "開啟地下錢莊", "警告", "Hash 錨點未正確設定");
+        // 不視為失敗，因為 Modal 已顯示
+      } else {
+        this.log(10, "開啟地下錢莊", "Hash 錨點已驗證", "#loanshark");
+      }
+
+      // 6️⃣ （Optional）驗證商人頭像圖片已載入
+      const merchantImage = this.page.locator('img[alt*="沈梟"], img[src*="merchant"]').first();
+      const isImageVisible = await merchantImage.isVisible().catch(() => false);
+      
+      if (isImageVisible) {
+        this.log(10, "開啟地下錢莊", "商人頭像已載入", "");
+      }
+
+      this.log(10, "開啟地下錢莊", "成功", "");
+      return true;
+
+    } catch (error: any) {
+      this.log(10, "開啟地下錢莊", "失敗", error.message);
+
+      // 失敗時截圖存證
+      try {
+        const errorDir = path.join(__dirname, "../../../test-results/action-errors");
+        if (!fs.existsSync(errorDir)) {
+          fs.mkdirSync(errorDir, { recursive: true });
+        }
+        const screenshotPath = path.join(errorDir, `action-10-open-loan-shark-error-${Date.now()}.png`);
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(10, "開啟地下錢莊", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
+  }
+
+  /**
    * Action 16: 少數決下注
    * @param option 選項 (A/B/C/D)
    * @param amount 下注金額
