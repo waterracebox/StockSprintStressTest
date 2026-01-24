@@ -2319,4 +2319,36 @@ export class GameActions {
       return null;
     }
   }
+
+  /**
+   * 輔助方法: 讀取當前股價
+   * 從圖表下方的「當前: $XX.XX」文字中解析股價
+   */
+  async getCurrentStockPrice(): Promise<number> {
+    try {
+      // 等待頁面載入完成
+      await this.page.waitForTimeout(1000);
+      
+      // 定位「當前: $XX.XX」文字
+      const priceText = await this.page
+        .locator('div')
+        .filter({ hasText: /^當前: \$/ })
+        .first()
+        .textContent();
+      
+      if (!priceText) {
+        return 0;
+      }
+      
+      // 解析價格（格式：「當前: $123.45」）
+      const match = priceText.match(/\$([0-9,.]+)/);
+      if (match) {
+        return parseFloat(match[1].replace(/,/g, ''));
+      }
+      
+      return 0;
+    } catch (error) {
+      return 0;
+    }
+  }
 }
