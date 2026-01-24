@@ -580,6 +580,44 @@ test("Action 09: Cancel All Contracts", async ({ page }) => {
 });
 
 /**
+ * Action 16: 少數決下注功能驗證測試
+ */
+test("Action 16: Bet on Minority Game", async ({ page }) => {
+  // 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  const usersData = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  const validUser = usersData.find((u: any) => u.registered === true);
+
+  if (!validUser) {
+    throw new Error("❌ users.json 中無已註冊的使用者");
+  }
+
+  // 實例化 GameActions
+  const actions = new GameActions(page, 1);
+
+  // 執行登入
+  const loginSuccess = await actions.login(validUser.username, validUser.password);
+  expect(loginSuccess).toBe(true);
+
+  console.log("✅ 登入成功，等待少數決遊戲開始...");
+
+  // 等待少數決遊戲開始（Action 15）
+  const gameStarted = await actions.waitForMinorityStart();
+  expect(gameStarted).toBe(true);
+
+  console.log("✅ 少數決遊戲已開始！準備下注...");
+
+  // 執行下注：選項 B, 金額 100
+  const betSuccess = await actions.betMinority("B", 100);
+  expect(betSuccess).toBe(true);
+
+  console.log("✅ Action 16 測試通過：已成功下注 $100 在選項 B");
+
+  // 保持頁面開啟 10 秒供人工確認
+  await page.waitForTimeout(10000);
+});
+
+/**
  * Action 10: 開啟地下錢莊功能驗證測試
  */
 test("Action 10: Open Loan Shark", async ({ page }) => {

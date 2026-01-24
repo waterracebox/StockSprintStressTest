@@ -1718,27 +1718,75 @@ export class GameActions {
    * @returns 成功偵測到少數決開始時回傳 true
    */
   async waitForMinorityStart(): Promise<boolean> {
-    this.log(15, "等待少數決開始", "開始", "偵測 Minority Overlay...");
+    this.log(15, "等待少數決開始", "開始", "Blocking 等待 Minority Overlay 出現");
 
     try {
-      // 1️⃣ 偵測少數決標題（使用無限 timeout 進行阻塞式等待）
-      // 前端路徑: frontend/src/components/minigame/games/Minority/MinorityUserView.tsx (Line 172)
-      // 標題結構: <div style={{ fontWeight: 800, fontSize: 18 }}>⚖️ 全場少數決</div>
-      const minorityTitle = this.page.getByText("⚖️ 全場少數決").first();
+      // 1️⃣ 主要策略：等待「⚖️ 全場少數決」文字出現（表示 Overlay 已自動彈出）
+      // 使用 timeout: 0 表示無限等待，直到 Admin 發布題目為止
+      // 參考 Action 12 的邏輯
+      const minorityTitleLocator = this.page.getByText('⚖️ 全場少數決').first();
       
-      this.log(15, "等待少數決開始", "等待中", "請從 Admin 後台發布少數決題目...");
+      this.log(15, "等待少數決開始", "等待中", "請至 Admin 後台發布少數決題目...");
       
-      // 使用 timeout: 0 實現無限等待（直到元素出現）
-      await minorityTitle.waitFor({ 
+      await minorityTitleLocator.waitFor({ 
         state: "visible", 
-        timeout: 0 
+        timeout: 0 // 無限等待（Blocking）
       });
+
+      this.log(15, "等待少數決開始", "Overlay 已出現", "");
+
+      // 2️⃣ 雙重檢查：確認 Overlay 確實可見且在最前層（z-index 9999）
+      const overlayContainer = this.page.locator('[style*="z-index: 9999"]').filter({
+        has: minorityTitleLocator
+      }).first();
+
+      const isVisible = await overlayContainer.isVisible().catch(() => false);
       
-      this.log(15, "等待少數決開始", "成功", "Minority Overlay 已顯示");
+      if (!isVisible) {
+        this.log(15, "等待少數決開始", "警告", "標題可見但容器不可見，嘗試點擊小遊戲按鈕");
+        
+        // 備用策略：點擊 TradingBar 的「小遊戲」按鈕（若 Overlay 未自動彈出）
+        const miniGameButton = this.page.locator('button').filter({
+          has: this.page.locator('img[alt="小遊戲"]')
+        }).first();
+        
+        const buttonVisible = await miniGameButton.isVisible().catch(() => false);
+        if (buttonVisible) {
+          await miniGameButton.click();
+          await this.page.waitForTimeout(1000); // 等待動畫
+        }
+      }
+
+      // 3️⃣ 最終驗證：確認 Overlay 內容包含「全場少數決」
+      const finalCheck = await this.page.getByText('⚖️ 全場少數決').first().isVisible();
+      
+      if (!finalCheck) {
+        this.log(15, "等待少數決開始", "失敗", "Overlay 未正確顯示");
+        return false;
+      }
+
+      this.log(15, "等待少數決開始", "成功", "Minority Overlay 已完整載入");
       return true;
 
     } catch (error: any) {
       this.log(15, "等待少數決開始", "失敗", error.message);
+      
+      // 失敗時截圖存證
+      try {
+        const screenshotDir = path.join(__dirname, "../../test-results/action-errors");
+        if (!fs.existsSync(screenshotDir)) {
+          fs.mkdirSync(screenshotDir, { recursive: true });
+        }
+        const screenshotPath = path.join(
+          screenshotDir,
+          `action-15-waitForMinorityStart-error-${Date.now()}.png`
+        );
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(15, "等待少數決開始", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
       return false;
     }
   }
@@ -1897,7 +1945,170 @@ export class GameActions {
     option: "A" | "B" | "C" | "D",
     amount: number
   ): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(16, "少數決下注", "開始", `選項=${option}, 金額=${amount}`);
+
+    try {
+      // 1️⃣ 等待倒數階段結束（參考 Action 13 的邏輯）
+      // 策略：等待大數字 "1", "2", "3" 消失（表示 COUNTDOWN 階段結束）
+      this.log(16, "少數決下注", "等待中", "等待倒數結束（COUNTDOWN -> GAMING）...");
+      
+      // 先等待一下，確保倒數已經開始
+      await this.page.waitForTimeout(2000);
+      
+      // 找尋倒數數字（大數字文字，正則匹配純數字 1-3）
+      const countdownNumber = this.page.locator('text=/^[1-3]$/').first();
+      
+      // 等待倒數數字消失（最多等 5 秒）
+      await countdownNumber.waitFor({ state: "hidden", timeout: 5000 }).catch(() => {
+        this.log(16, "少數決下注", "跳過", "倒數數字未出現或已消失");
+      });
+      
+      this.log(16, "少數決下注", "倒數結束", "準備等待選項按鈕...");
+
+      // 2️⃣ 等待選項按鈕出現（表示已進入 GAMING 階段）
+      // 策略：找尋包含 "A. "、"B. "、"C. "、"D. " 的按鈕
+      this.log(16, "少數決下注", "等待中", "等待選項按鈕出現...");
+      
+      // 等待任一選項按鈕出現
+      const anyOptionButton = this.page.locator('button').filter({
+        hasText: /^[A-D]\.\s/
+      }).first();
+      
+      await anyOptionButton.waitFor({ 
+        state: "visible", 
+        timeout: 10000 
+      });
+      
+      this.log(16, "少數決下注", "選項已出現", "GAMING 階段已開始");
+
+      // 3️⃣ 點擊目標選項
+      const targetButton = this.page.locator('button').filter({
+        hasText: new RegExp(`^${option}\.\\s`)
+      }).first();
+      
+      await targetButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      // 輸出按鈕文字用於除錯
+      const buttonText = await targetButton.textContent();
+      this.log(16, "少數決下注", "準備點擊", `"${buttonText}"`);
+      
+      await targetButton.click();
+      
+      this.log(16, "少數決下注", "已點擊選項", option);
+
+      // 4️⃣ 等待前端狀態更新（selectedOption 生效，解除 input disabled）
+      // 增加等待時間確保動畫完成和狀態同步
+      await this.page.waitForTimeout(800);
+
+      // 5️⃣ 定位金額輸入框（type="number"）
+      // 參考 Action 11 的邏輯：找到所有可見的輸入框
+      const allInputs = this.page.locator('input[type="number"]:visible');
+      const inputCount = await allInputs.count();
+      this.log(16, "少數決下注", "偵測到輸入框數量", inputCount.toString());
+
+      // 策略：找到 width: 70px 的輸入框（前端實作 MinorityUserView.tsx Line ~310）
+      let amountInput = null;
+      for (let i = 0; i < inputCount; i++) {
+        const input = allInputs.nth(i);
+        const width = await input.evaluate((el: HTMLInputElement) => {
+          return window.getComputedStyle(el).width;
+        });
+        this.log(16, "少數決下注", `輸入框 ${i} 寬度`, width);
+        
+        if (width === '70px') {
+          amountInput = input;
+          this.log(16, "少數決下注", "找到目標輸入框", `index=${i}`);
+          break;
+        }
+      }
+
+      if (!amountInput) {
+        // Fallback: 使用最後一個輸入框
+        amountInput = allInputs.last();
+        this.log(16, "少數決下注", "使用 Fallback", "last()");
+      }
+
+      await amountInput.waitFor({ state: "visible", timeout: 3000 });
+      this.log(16, "少數決下注", "已定位輸入框", "");
+
+      // 6️⃣ 填寫金額（完全參考 Action 11 的成功模式：使用 evaluate 直接操作 DOM）
+      const currentValue = await amountInput.inputValue();
+      this.log(16, "少數決下注", "輸入前的值", currentValue);
+
+      // 使用 evaluate 方法繞過 Playwright 的點擊遮擋檢查
+      await amountInput.evaluate((el: HTMLInputElement, value: string) => {
+        // 1. 先清空
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype,
+          'value'
+        )?.set;
+        
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(el, '');
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        
+        // 2. 設定新值
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(el, value);
+        }
+        
+        // 3. 觸發事件（確保 React 狀態更新）
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('blur', { bubbles: true }));
+      }, amount.toString());
+
+      // Debug: 驗證輸入後的值
+      await this.page.waitForTimeout(500);
+      const newValue = await amountInput.inputValue();
+      this.log(16, "少數決下注", "輸入後的值", newValue);
+      this.log(16, "少數決下注", "已輸入金額", amount.toString());
+
+      // 8️⃣ 驗證下注金額文字已更新（UI Feedback）
+      const betAmountText = this.page.locator('div').filter({
+        hasText: new RegExp(`下注金額:\\s*\\$${amount}`)
+      }).first();
+
+      const isTextVisible = await betAmountText.isVisible({ timeout: 2000 }).catch(() => false);
+
+      if (!isTextVisible) {
+        this.log(16, "少數決下注", "警告", "下注金額文字未更新（但輸入框已填入）");
+      } else {
+        this.log(16, "少數決下注", "金額已驗證", `UI 顯示: $${amount}`);
+      }
+
+      // 9️⃣ 驗證輸入框的實際值
+      const actualValue = await amountInput.inputValue();
+      if (actualValue !== amount.toString()) {
+        this.log(16, "少數決下注", "失敗", `輸入框值不符：預期 ${amount}, 實際 ${actualValue}`);
+        return false;
+      }
+
+      this.log(16, "少數決下注", "成功", `已提交選項 ${option}, 金額 $${amount}`);
+      return true;
+
+    } catch (error: any) {
+      this.log(16, "少數決下注", "失敗", error.message);
+      
+      // 失敗時截圖存證
+      try {
+        const screenshotDir = path.join(__dirname, "../../test-results/action-errors");
+        if (!fs.existsSync(screenshotDir)) {
+          fs.mkdirSync(screenshotDir, { recursive: true });
+        }
+        const screenshotPath = path.join(
+          screenshotDir,
+          `action-16-betMinority-error-${Date.now()}.png`
+        );
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(16, "少數決下注", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   /**
