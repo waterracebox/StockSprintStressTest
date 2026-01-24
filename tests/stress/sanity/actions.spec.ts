@@ -1067,3 +1067,96 @@ test("Action 13: Answer Quiz", async ({ page }) => {
   console.log("\n✅ 所有驗證項目通過！");
   console.log("\n🔵 ========== Action 13: 問答作答 測試完成 ==========\n");
 });
+// ==================== Action 14: 問答結果報告 ====================
+/**
+ * Action 14: 問答結果報告驗證測試
+ * 
+ * 測試策略：單元測試（假設遊戲已開始）
+ * 
+ * 測試流程：
+ * 1. 讀取已註冊使用者並登入
+ * 2. 等待問答遊戲啟動（Action 12）
+ * 3. 提交答案（Action 13）
+ * 4. 【核心測試】等待結果畫面並讀取資產變化（Action 14）
+ * 5. 驗證回傳的 AssetData 不為 null
+ * 
+ * 為何不需要 Action 00（等待主遊戲開始）？
+ * - 問答遊戲依賴主遊戲狀態，但 Admin 發布題目時已確保遊戲開始
+ * - Action 12 (waitForQuizStart) 會無限等待，直到 Overlay 出現
+ * - 因此測試可以假設：當 Admin 發布題目時，主遊戲已經在運行
+ * - 這樣可以避免測試超時（Action 00 預設 60 秒 timeout）
+ * 
+ * 手動操作需求：
+ * - 執行測試前，請在 Admin 後台：
+ *   1. 【先啟動主遊戲】點擊「開始遊戲」按鈕
+ *   2. 切換至「小遊戲」→「問答」Tab
+ *   3. 選擇題目並按下「發布題目」
+ * - 測試會自動：
+ *   1. 偵測到 Overlay 出現（Action 12）
+ *   2. 等待倒數結束並點擊選項 A（Action 13）
+ *   3. 等待結果畫面並讀取資產（Action 14）
+ * - 【請勿】在測試過程中手動操作使用者頁面
+ */
+test("Action 14: Wait Quiz Result and Report", async ({ page }) => {
+  console.log("\n🔵 ========== Action 14: 問答結果報告 測試開始 ==========");
+
+  // 1️⃣ 讀取已註冊使用者
+  const dataFilePath = path.join(__dirname, "../data", "users.json");
+  let users: Array<{ username: string; password: string; registered: boolean }> = [];
+
+  if (fs.existsSync(dataFilePath)) {
+    const rawData = fs.readFileSync(dataFilePath, "utf-8");
+    users = JSON.parse(rawData);
+  }
+
+  const registeredUser = users.find((u) => u.registered);
+  if (!registeredUser) {
+    console.error("❌ 測試失敗：找不到已註冊的使用者，請先執行 Action 01");
+    return;
+  }
+
+  console.log(`✓ 使用帳號：${registeredUser.username}`);
+  const actions = new GameActions(page, 99);
+
+  // 2️⃣ 登入
+  await page.goto("/");
+  const loginSuccess = await actions.login(registeredUser.username, registeredUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("   ✓ 登入成功");
+
+  // 3️⃣ 等待問答開始（假設主遊戲已啟動）
+  console.log("\n⏳ 等待問答遊戲啟動（Action 12）...");
+  console.log("   📢 請確保 Admin 已啟動主遊戲，然後發布問答題目");
+  console.log("   ⚠️  提示：如果長時間等待，請檢查主遊戲是否已開始");
+  const quizStarted = await actions.waitForQuizStart();
+  expect(quizStarted).toBe(true);
+  console.log("   ✓ 問答遊戲已啟動");
+
+  // 4️⃣ 提交答案
+  console.log("\n📝 提交答案（Action 13）...");
+  const answerSuccess = await actions.answerQuiz("A");
+  expect(answerSuccess).toBe(true);
+  console.log("   ✓ 答案已提交");
+
+  // 5️⃣ 【核心測試】等待結果並讀取資產
+  console.log("\n⏳ 等待問答結果與資產更新（Action 14）...");
+  console.log("   📢 請注意以下步驟：");
+  console.log("   1️⃣ 等待作答倒數自然結束（約 10 秒）");
+  console.log("   2️⃣ 【重要】在 Admin 後台按下「結算」按鈕");
+  console.log("   3️⃣ 測試會自動偵測 RESULT 階段並讀取資產");
+  console.log("");
+  
+  const resultAssets = await actions.waitQuizResultAndReport();
+  
+  // 6️⃣ 驗證
+  expect(resultAssets).not.toBeNull();
+  console.log("\n✅ 驗證結果：");
+  console.log(`   ✓ AssetData 已取得（非 null）`);
+  console.log(`   ✓ 當前現金: $${resultAssets!.cash.toFixed(2)}`);
+  console.log(`   ✓ 總資產: $${resultAssets!.totalAssets.toFixed(2)}`);
+  console.log(`   ✓ 股票市值: $${resultAssets!.stockValue.toFixed(2)}`);
+  console.log(`   ✓ 持股數量: ${resultAssets!.stockCount} 張`);
+  console.log(`   ✓ 負債: $${resultAssets!.debt.toFixed(2)}`);
+
+  console.log("\n🔵 ========== Action 14: 問答結果報告 測試完成 ==========\n");
+});

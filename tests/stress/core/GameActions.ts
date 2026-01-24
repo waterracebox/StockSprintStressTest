@@ -1614,9 +1614,94 @@ export class GameActions {
   /**
    * Action 14: 問答結果報告
    * 等待結果畫面並執行 Action 04 (讀取資產)
+   * 
+   * 實作邏輯：
+   * 1. 先確認已提交答案（顯示「等待結算...」提示）
+   * 2. 等待「正確答案：」文字出現（RESULT 階段的通用元素）
+   * 3. 呼叫 readAssets() 讀取更新後的資產狀態
+   * 4. Log 輸出結果資訊與當前現金
+   * 5. 回傳 AssetData 物件
+   * 
+   * ⚠️ 注意：Admin 可能需要手動按下「結算」按鈕才會進入 RESULT 階段
+   * 
+   * @returns AssetData 或 null（失敗時）
    */
   async waitQuizResultAndReport(): Promise<AssetData | null> {
-    /* TODO */ return null;
+    this.log(14, "問答結果報告", "開始", "等待結果畫面載入...");
+
+    try {
+      // 1️⃣ 確認當前狀態：檢查是否已提交答案
+      const submittedHint = this.page.getByText(/已提交答案|等待結算/).first();
+      const isSubmitted = await submittedHint.isVisible().catch(() => false);
+      
+      if (isSubmitted) {
+        this.log(14, "問答結果報告", "已確認", "答案已提交，等待遊戲結算...");
+      } else {
+        this.log(14, "問答結果報告", "警告", "未偵測到「已提交答案」提示，可能尚未作答");
+      }
+
+      // 2️⃣ 等待結果階段載入（偵測「正確答案：」文字）
+      // 這個文字在 RESULT 階段無論答對/答錯都會顯示，是最可靠的標記
+      this.log(14, "問答結果報告", "等待中", "等待遊戲進入 RESULT 階段（最多 120 秒）...");
+      this.log(14, "問答結果報告", "提示", "⚠️ 如果長時間等待，請檢查 Admin 是否需要手動按下「結算」按鈕");
+      
+      const resultIndicator = this.page.locator('div').filter({
+        hasText: /正確答案：[A-D]/
+      }).first();
+
+      // 增加 timeout 到 120 秒（允許手動操作時間）
+      await resultIndicator.waitFor({ 
+        state: "visible", 
+        timeout: 120000 
+      });
+      
+      this.log(14, "問答結果報告", "結果階段已載入", "偵測到「正確答案」文字");
+
+      // 3️⃣ 等待額外 1 秒確保資產更新完成
+      // 伺服器可能需要時間處理獎金並推送至前端
+      await this.page.waitForTimeout(1000);
+
+      // 4️⃣ 讀取更新後的資產
+      this.log(14, "問答結果報告", "執行", "讀取資產變化...");
+      const resultAssets = await this.readAssets();
+
+      if (!resultAssets) {
+        this.log(14, "問答結果報告", "失敗", "無法讀取資產資料");
+        return null;
+      }
+
+      // 5️⃣ Log 輸出資產狀態
+      this.log(
+        14, 
+        "問答結果報告", 
+        "成功", 
+        `當前現金: $${resultAssets.cash.toFixed(2)} | 總資產: $${resultAssets.totalAssets.toFixed(2)}`
+      );
+
+      return resultAssets;
+
+    } catch (error: any) {
+      this.log(14, "問答結果報告", "失敗", error.message);
+      
+      // 錯誤截圖（協助除錯）
+      try {
+        const screenshotDir = path.join(process.cwd(), "test-results", "action-errors");
+        if (!fs.existsSync(screenshotDir)) {
+          fs.mkdirSync(screenshotDir, { recursive: true });
+        }
+        
+        const screenshotPath = path.join(
+          screenshotDir,
+          `action-14-waitQuizResult-error-${Date.now()}.png`
+        );
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(14, "問答結果報告", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return null;
+    }
   }
 
   // ==================== Minority ====================
