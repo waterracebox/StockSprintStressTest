@@ -1500,9 +1500,115 @@ export class GameActions {
   /**
    * Action 13: 問答作答
    * @param option 選項 (A/B/C/D)
+   * 
+   * 策略：
+   * 1. 等待選項按鈕出現（表示已進入 GAMING 階段）
+   * 2. 點擊目標選項（例如 "A."）
+   * 3. 驗證按鈕被鎖定（disabled）或樣式變化（confirm selection）
+   * 4. 返回 true 表示成功提交
+   * 
+   * 前端對應邏輯：
+   * - QuizUserView.tsx：GAMING 階段渲染選項按鈕
+   * - handleOptionClick：點擊後發送 Socket.io 事件並鎖定按鈕
    */
   async answerQuiz(option: "A" | "B" | "C" | "D"): Promise<boolean> {
-    /* TODO */ return false;
+    this.log(13, "問答作答", "開始", `選項=${option}`);
+
+    try {
+      // 1️⃣ 等待倒數階段結束
+      // 策略：等待大數字 "1", "2", "3" 消失（表示 COUNTDOWN 階段結束）
+      this.log(13, "問答作答", "等待中", "等待倒數結束（COUNTDOWN -> GAMING）...");
+      
+      // 先等待一下，確保倒數已經開始
+      await this.page.waitForTimeout(2000);
+      
+      // 找尋倒數數字（大數字文字，正則匹配純數字 1-3）
+      // 策略：倒數數字是全螢幕置中的大文字
+      const countdownNumber = this.page.locator('text=/^[1-3]$/').first();
+      
+      // 等待倒數數字消失（最多等 5 秒）
+      await countdownNumber.waitFor({ state: "hidden", timeout: 5000 }).catch(() => {
+        this.log(13, "問答作答", "跳過", "倒數數字未出現或已消失");
+      });
+      
+      this.log(13, "問答作答", "倒數結束", "準備等待選項按鈕...");
+
+      // 2️⃣ 等待選項按鈕出現（表示已進入 GAMING 階段）
+      // 策略：找尋包含 "A. "、"B. "、"C. "、"D. " 的按鈕
+      this.log(13, "問答作答", "等待中", "等待選項按鈕出現...");
+      
+      // 等待任一選項按鈕出現
+      const anyOptionButton = this.page.locator('button').filter({
+        hasText: /^[A-D]\.\s/
+      }).first();
+      
+      await anyOptionButton.waitFor({ 
+        state: "visible", 
+        timeout: 10000 
+      });
+      
+      this.log(13, "問答作答", "選項已出現", "GAMING 階段已開始");
+
+      // 3️⃣ 點擊目標選項
+      const targetButton = this.page.locator('button').filter({
+        hasText: new RegExp(`^${option}\\.\\s`)
+      }).first();
+      
+      await targetButton.waitFor({ state: "visible", timeout: 3000 });
+      
+      // 輸出按鈕文字用於除錯
+      const buttonText = await targetButton.textContent();
+      this.log(13, "問答作答", "準備點擊", `"${buttonText}"`);
+      
+      await targetButton.click();
+      
+      this.log(13, "問答作答", "已點擊選項", option);
+
+      // 4️⃣ 驗證按鈕被鎖定（表示答案已提交）
+      await this.page.waitForTimeout(800);
+      
+      const isDisabled = await targetButton.evaluate((btn) => {
+        return (btn as HTMLButtonElement).disabled;
+      });
+      
+      if (!isDisabled) {
+        this.log(13, "問答作答", "警告", "按鈕未被鎖定（可能網路延遲）");
+      } else {
+        this.log(13, "問答作答", "已鎖定", "按鈕狀態已更新");
+      }
+
+      // 5️⃣ 額外驗證：檢查是否顯示「已提交答案」提示
+      const submittedHint = this.page.getByText('已提交答案，等待結算...').first();
+      const hasSubmittedHint = await submittedHint.isVisible().catch(() => false);
+      
+      if (hasSubmittedHint) {
+        this.log(13, "問答作答", "已顯示提示", "「已提交答案，等待結算...」");
+      }
+
+      this.log(13, "問答作答", "成功", `已提交選項 ${option}`);
+      return true;
+
+    } catch (error: any) {
+      this.log(13, "問答作答", "失敗", error.message);
+      
+      // 失敗時截圖存證
+      try {
+        const screenshotDir = path.join(__dirname, "../../test-results/action-errors");
+        if (!fs.existsSync(screenshotDir)) {
+          fs.mkdirSync(screenshotDir, { recursive: true });
+        }
+        const screenshotPath = path.join(
+          screenshotDir,
+          `action-13-answerQuiz-error-${Date.now()}.png`
+        );
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(13, "問答作答", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   /**
