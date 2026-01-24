@@ -812,3 +812,86 @@ test("Action 11: Handle Loan (Repay)", async ({ page }) => {
   console.log("\n✅ 驗證通過：還款成功且資產變化正確！");
   console.log("\n🔵 ========== Action 11: 借/還錢 (還款) 測試完成 ==========\n");
 });
+
+/**
+ * Action 19: 與地下錢莊主人互動測試
+ * 
+ * 測試流程：
+ * 1. 讀取已註冊使用者並登入
+ * 2. 等待遊戲開始
+ * 3. 呼叫 interactWithLoanShark（開啟 Modal、點擊商人頭像、檢查對話變化）
+ * 4. 呼叫 closeLoanShark 關閉 Modal
+ * 5. 驗證回到主頁面
+ */
+test("Action 19: Interact With Loan Shark", async ({ page }) => {
+  console.log("\n🔵 ========== Action 19: 與地下錢莊主人互動 測試開始 ==========\n");
+
+  // 1. 讀取已註冊使用者
+  const dataDir = path.join(__dirname, "../data");
+  const usersFilePath = path.join(dataDir, "users.json");
+
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  if (users.length === 0) {
+    throw new Error("❌ users.json 為空！");
+  }
+
+  const testUser = users[0];
+  console.log(`📋 使用測試帳號: ${testUser.username}`);
+
+  // 2. 實例化 GameActions
+  const actions = new GameActions(page, 0);
+
+  // 3. 執行登入
+  console.log("\n🔐 執行登入...");
+  const loginSuccess = await actions.login(testUser.username, testUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("✅ 登入成功");
+
+  // 4. 等待遊戲開始
+  console.log("\n⏳ 等待遊戲開始...");
+  const gameStarted = await actions.waitForGameStart();
+  expect(gameStarted).toBe(true);
+  console.log("✅ 遊戲已開始");
+
+  // 5. 執行 Action 19：與地下錢莊主人互動
+  console.log("\n🎯 執行 Action 19: 與地下錢莊主人互動...");
+  const interactSuccess = await actions.interactWithLoanShark();
+  
+  expect(interactSuccess).toBe(true);
+  console.log("✅ 互動成功");
+
+  // 6. 驗證 Modal 仍開啟
+  console.log("\n🔍 驗證 Modal 狀態...");
+  const modalTitle = page.locator('span').filter({ hasText: /^地下錢莊$/ }).first();
+  const isModalVisible = await modalTitle.isVisible().catch(() => false);
+  
+  expect(isModalVisible).toBe(true);
+  console.log("✅ Modal 仍處於開啟狀態");
+
+  // 7. 呼叫 closeLoanShark 關閉 Modal
+  console.log("\n🚪 關閉地下錢莊 Modal...");
+  const closeSuccess = await actions.closeLoanShark();
+  
+  expect(closeSuccess).toBe(true);
+  console.log("✅ Modal 關閉成功");
+
+  // 8. 驗證回到主頁面
+  console.log("\n🔍 驗證回到主頁面...");
+  
+  // 驗證 URL 是否為主頁
+  const currentUrl = page.url();
+  expect(currentUrl).toContain('/home');
+  console.log(`✅ URL 確認: ${currentUrl}`);
+
+  // 驗證 Modal 已關閉
+  const isModalClosed = await modalTitle.isHidden().catch(() => true);
+  expect(isModalClosed).toBe(true);
+  console.log("✅ Modal 已完全關閉");
+
+  console.log("\n✅ 驗證通過：與地下錢莊主人互動成功且正確關閉 Modal！");
+  console.log("\n🔵 ========== Action 19: 與地下錢莊主人互動 測試完成 ==========\n");
+});
