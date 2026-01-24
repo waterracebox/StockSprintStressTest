@@ -1255,3 +1255,68 @@ test("Action 15: Wait for Minority Start", async ({ page }) => {
 
   console.log("\n🔵 ========== Action 15: 等待少數決開始 測試完成 ==========\n");
 });
+/**
+ * Action 18: 少數決結果報告功能驗證測試
+ */
+test("Action 18: Wait Minority Result", async ({ page }) => {
+  console.log("\n🔵 ========== Action 18: 少數決結果報告 測試開始 ==========\n");
+
+  // 1️⃣ 讀取已註冊使用者
+  const usersFilePath = path.join(__dirname, "../data/users.json");
+  if (!fs.existsSync(usersFilePath)) {
+    throw new Error("❌ users.json 不存在！請先執行 Action 01 註冊測試。");
+  }
+
+  const users = JSON.parse(fs.readFileSync(usersFilePath, "utf-8"));
+  const registeredUser = users.find((u) => u.registered);
+  if (!registeredUser) {
+    console.error("❌ 測試失敗：找不到已註冊的使用者，請先執行 Action 01");
+    return;
+  }
+
+  console.log(`✓ 使用帳號：${registeredUser.username}`);
+  const actions = new GameActions(page, 18);
+
+  // 2️⃣ 登入
+  await page.goto("/");
+  const loginSuccess = await actions.login(registeredUser.username, registeredUser.password);
+  expect(loginSuccess).toBe(true);
+  console.log("   ✓ 登入成功");
+
+  // 3️⃣ 等待少數決開始（假設主遊戲已啟動）
+  console.log("\n⏳ 等待少數決遊戲啟動（Action 15）...");
+  console.log("   📢 請確保 Admin 已啟動主遊戲，然後發布少數決題目");
+  console.log("   ⚠️  提示：如果長時間等待，請檢查主遊戲是否已開始");
+  const minorityStarted = await actions.waitForMinorityStart();
+  expect(minorityStarted).toBe(true);
+  console.log("   ✓ 少數決遊戲已啟動");
+
+  // 4️⃣ 下注
+  console.log("\n💰 執行下注（Action 16）...");
+  console.log("   選項: B, 金額: $100");
+  const betSuccess = await actions.betMinority("B", 100);
+  expect(betSuccess).toBe(true);
+  console.log("   ✓ 下注成功");
+
+  // 5️⃣ 【核心測試】等待結果並讀取資產
+  console.log("\n⏳ 等待少數決結果與資產更新（Action 18）...");
+  console.log("   📢 請注意以下步驟：");
+  console.log("   1️⃣ 等待下注倒數自然結束（約 15 秒）");
+  console.log("   2️⃣ 【重要】在 Admin 後台按下「結算」按鈕");
+  console.log("   3️⃣ 測試會自動偵測 RESULT 階段並讀取資產");
+  console.log("");
+  
+  const resultAssets = await actions.waitMinorityResultAndReport();
+  
+  // 6️⃣ 驗證
+  expect(resultAssets).not.toBeNull();
+  console.log("\n✅ 驗證結果：");
+  console.log(`   ✓ AssetData 已取得（非 null）`);
+  console.log(`   ✓ 當前現金: $${resultAssets!.cash.toFixed(2)}`);
+  console.log(`   ✓ 總資產: $${resultAssets!.totalAssets.toFixed(2)}`);
+  console.log(`   ✓ 股票市值: $${resultAssets!.stockValue.toFixed(2)}`);
+  console.log(`   ✓ 持股數量: ${resultAssets!.stockCount} 張`);
+  console.log(`   ✓ 負債: $${resultAssets!.debt.toFixed(2)}`);
+
+  console.log("\n🔵 ========== Action 18: 少數決結果報告 測試完成 ==========\n");
+});

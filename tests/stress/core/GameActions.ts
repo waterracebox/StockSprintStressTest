@@ -2122,8 +2122,83 @@ export class GameActions {
   /**
    * Action 18: 少數決結果報告
    * 等待結果畫面並執行 Action 04 (讀取資產)
+   * 
+   * 實作邏輯（參照 Action 14）：
+   * 1. 等待「你選擇了」文字出現（RESULT 階段的通用元素）
+   * 2. 呼叫 readAssets() 讀取更新後的資產狀態
+   * 3. Log 輸出結果資訊與當前現金
+   * 4. 回傳 AssetData 物件
+   * 
+   * ⚠️ 注意：Admin 可能需要手動按下「結算」按鈕才會進入 RESULT 階段
+   * 
+   * @returns AssetData 或 null（失敗時）
    */
   async waitMinorityResultAndReport(): Promise<AssetData | null> {
-    /* TODO */ return null;
+    this.log(18, "少數決結果報告", "開始", "等待結果畫面載入...");
+
+    try {
+      // 1️⃣ 等待結果階段載入（偵測「你選擇了」文字）
+      // 此文字在 RESULT 階段必定顯示，是最可靠的標記
+      // 參考 MinorityUserView.tsx Line 443
+      this.log(18, "少數決結果報告", "等待中", "等待遊戲進入 RESULT 階段（最多 120 秒）...");
+      this.log(18, "少數決結果報告", "提示", "⚠️ 如果長時間等待，請檢查 Admin 是否需要手動按下「結算」按鈕");
+      
+      const resultIndicator = this.page.locator('div').filter({
+        hasText: /你選擇了\s*\[/
+      }).first();
+
+      // 增加 timeout 到 120 秒（允許手動操作時間）
+      await resultIndicator.waitFor({ 
+        state: "visible", 
+        timeout: 120000 
+      });
+      
+      this.log(18, "少數決結果報告", "結果階段已載入", "偵測到「你選擇了」文字");
+
+      // 2️⃣ 等待額外 1 秒確保資產更新完成
+      // 伺服器可能需要時間處理獎金並推送至前端
+      await this.page.waitForTimeout(1000);
+
+      // 3️⃣ 讀取更新後的資產
+      this.log(18, "少數決結果報告", "執行", "讀取資產變化...");
+      const resultAssets = await this.readAssets();
+
+      if (!resultAssets) {
+        this.log(18, "少數決結果報告", "失敗", "無法讀取資產資料");
+        return null;
+      }
+
+      // 4️⃣ Log 輸出資產狀態
+      this.log(
+        18, 
+        "少數決結果報告", 
+        "成功", 
+        `當前現金: $${resultAssets.cash.toFixed(2)} | 總資產: $${resultAssets.totalAssets.toFixed(2)}`
+      );
+
+      return resultAssets;
+
+    } catch (error: any) {
+      this.log(18, "少數決結果報告", "失敗", error.message);
+      
+      // 錯誤截圖（協助除錯）
+      try {
+        const screenshotDir = path.join(process.cwd(), "test-results", "action-errors");
+        if (!fs.existsSync(screenshotDir)) {
+          fs.mkdirSync(screenshotDir, { recursive: true });
+        }
+        
+        const screenshotPath = path.join(
+          screenshotDir,
+          `action-18-waitMinorityResult-error-${Date.now()}.png`
+        );
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(18, "少數決結果報告", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return null;
+    }
   }
 }
