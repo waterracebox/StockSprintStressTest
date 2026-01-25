@@ -465,3 +465,154 @@ test("Scenario: User C (Loan Shark Client) - 1 min", async ({ page }) => {
   console.log(`\n✅ User C 情境測試完成！`);
 });
 
+// ==================== User D: 機智問答達人 (Quiz Master) ====================
+
+/**
+ * User D 行為模式：機智問答達人
+ * 
+ * 策略邏輯（事件驅動模式）：
+ * 1. 阻塞式等待問答遊戲開始（Blocking Wait）
+ * 2. 問答開始後，隨機選擇 A/B/C/D 作答
+ * 3. 等待結果並讀取資產變化
+ * 4. 回到步驟 1，繼續等待下一場問答
+ * 
+ * 核心特性：
+ * - **Event-Driven Loop（事件驅動迴圈）**：
+ *   與 User A/B/C 的持續交易不同，User D 大部分時間處於「睡眠狀態」，
+ *   只有當 Admin 手動觸發問答遊戲時才會被「喚醒」。
+ * 
+ * - **Blocking Wait（阻塞式等待）**：
+ *   waitForQuizStart() 使用 timeout: 0（無限等待），直到偵測到
+ *   「🧠 機智問答」文字出現。這避免了輪詢（Polling）的資源浪費。
+ * 
+ * - **隨機作答策略**：
+ *   為簡化壓力測試邏輯，此版本採用隨機選擇答案。
+ *   若需實作智能策略，可讀取 data/user-strategies.json 檔案。
+ * 
+ * @param page - Playwright Page 物件
+ * @param username - 使用者帳號
+ * @param password - 使用者密碼
+ * @param duration - 執行時長（毫秒）
+ */
+export async function runUserD(
+  page: Page,
+  username: string,
+  password: string,
+  duration: number
+): Promise<void> {
+  const actions = new GameActions(page, username);
+  const startTime = Date.now();
+
+  console.log(`[User D][${username}] 開始執行機智問答策略，預計執行 ${duration / 1000} 秒`);
+
+  // Step 1: 登入
+  console.log(`[User D][${username}] 執行登入...`);
+  const loginSuccess = await actions.login(username, password);
+  if (!loginSuccess) {
+    throw new Error(`[User D][${username}] 登入失敗`);
+  }
+  console.log(`[User D][${username}] ✅ 登入成功`);
+
+  // Step 2: 等待遊戲開始
+  console.log(`[User D][${username}] 等待遊戲開始...`);
+  const gameStarted = await actions.waitForGameStart();
+  if (!gameStarted) {
+    throw new Error(`[User D][${username}] 遊戲未開始（超時）`);
+  }
+  console.log(`[User D][${username}] ✅ 遊戲已開始`);
+
+  // Step 3: 問答迴圈（事件驅動）
+  let quizRound = 0;
+
+  while (Date.now() < startTime + duration) {
+    quizRound++;
+    console.log(`\n[User D][${username}] ======== 等待第 ${quizRound} 場問答 ========`);
+
+    // Step 3.1: 阻塞式等待問答開始 ⏳
+    console.log(`[User D][${username}] ⏳ 阻塞等待問答遊戲開始...（此步驟可能需等待數分鐘）`);
+    const quizStarted = await actions.waitForQuizStart();
+    
+    if (!quizStarted) {
+      console.log(`[User D][${username}] ⏱️ 測試時間結束，尚未偵測到新問答`);
+      break;
+    }
+    
+    console.log(`[User D][${username}] 🎯 問答遊戲已開始！`);
+
+    // Step 3.2: 隨機選擇答案
+    const options: Array<"A" | "B" | "C" | "D"> = ["A", "B", "C", "D"];
+    const choice = options[randomInt(0, 3)];
+    
+    console.log(`[User D][${username}] 🎲 隨機選擇答案：${choice}`);
+    
+    const answerSuccess = await actions.answerQuiz(choice);
+    if (answerSuccess) {
+      console.log(`[User D][${username}] ✅ 成功提交答案：${choice}`);
+    } else {
+      console.warn(`[User D][${username}] ⚠️ 提交答案失敗`);
+    }
+
+    // Step 3.3: 等待結果並讀取資產
+    console.log(`[User D][${username}] ⏳ 等待問答結果...`);
+    const updatedAssets = await actions.waitQuizResultAndReport();
+    
+    if (updatedAssets) {
+      console.log(`[User D][${username}] 📊 結果公布後資產：現金 = ${updatedAssets.cash.toFixed(2)}, 負債 = ${updatedAssets.debt.toFixed(2)}`);
+    } else {
+      console.warn(`[User D][${username}] ⚠️ 無法讀取結果後的資產`);
+    }
+
+    // Step 3.4: 短暫等待（確保 UI 穩定後再進入下一次等待）
+    await page.waitForTimeout(1000);
+    
+    console.log(`[User D][${username}] 🔄 回到等待狀態，準備下一場問答...`);
+  }
+
+  console.log(`\n[User D][${username}] 🏁 執行完畢，共參與 ${quizRound - 1} 場問答`);
+}
+
+// ==================== 測試案例 ====================
+
+/**
+ * User D Simulation Test (2 分鐘驗證)
+ * 
+ * 目的：驗證機智問答機器人的事件驅動邏輯
+ * 執行時長：120 秒
+ * 
+ * 預期行為：
+ * - 登入後進入「阻塞等待」狀態
+ * - 當 Admin 發布問答題目時，機器人應立即偵測並作答
+ * - 等待結果公布後，自動回到等待狀態
+ * - 若測試期間 Admin 未發布題目，測試應在 2 分鐘後正常結束
+ * 
+ * ⚠️ 測試前提：
+ * - 需要 Admin 手動配合發布至少 1 題問答（透過 /admin 後台）
+ * - 若無題目發布，測試仍會 Pass（僅顯示「尚未偵測到新問答」）
+ */
+test("Scenario: User D (Quiz Master) - 2 min", async ({ page }) => {
+  test.setTimeout(180000); // 設定 3 分鐘超時（120秒執行 + 60秒緩衝）
+  
+  const users = loadUsers();
+  
+  // 選擇第四個已註冊的使用者（避免與 User A/B/C 衝突）
+  const registeredUsers = users.filter((u) => u.registered);
+  const user = registeredUsers[3] || registeredUsers[0];
+  
+  if (!user) {
+    throw new Error("❌ 找不到已註冊的使用者，請先執行 Action 01 註冊");
+  }
+
+  console.log(`\n========================================`);
+  console.log(`🎯 開始執行 User D 情境測試`);
+  console.log(`使用者：${user.username}`);
+  console.log(`執行時長：120 秒`);
+  console.log(`⚠️ 請確保 Admin 在測試期間發布至少 1 題問答`);
+  console.log(`========================================\n`);
+
+  // 執行 User D 行為模式（120 秒）
+  await runUserD(page, user.username, user.password, 120000);
+
+  // 驗證：測試不應拋出異常
+  expect(true).toBe(true);
+  console.log(`\n✅ User D 情境測試完成！`);
+});
