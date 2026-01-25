@@ -1299,9 +1299,23 @@ export class GameActions {
   // ==================== Loan ====================
 
   /**
-   * Action 11: 借/還錢
+   * Action 11: 借/還錢（完全自給自足版本）
    * @param action 動作類型 (BORROW=借款, REPAY=還款)
    * @param amount 金額
+   * 
+   * 🔧 重構說明（v2.0 - User C 場景專用）：
+   * 本方法現在是完全自給自足的原子操作，包含以下完整流程：
+   * 1. 驗證金額合法性
+   * 2. 開啟地下錢莊 Modal（呼叫 openLoanShark）
+   * 3. 模式切換（借/還）
+   * 4. 填寫金額（精確定位 60px 寬度輸入框）
+   * 5. 提交並確認
+   * 6. 關閉 Modal（呼叫 closeLoanShark）
+   * 
+   * 穩定性改進：
+   * - 避免 Modal 狀態殘留導致的競態條件
+   * - 確保每次呼叫後 UI 狀態一致（Modal 已關閉）
+   * - 支援 User C 的高頻借還款循環測試
    */
   async handleLoan(
     action: "BORROW" | "REPAY",
@@ -1316,23 +1330,14 @@ export class GameActions {
         return false;
       }
 
-      // 2️⃣ 確認 Modal 已開啟（若未開啟則先開啟）
-      const modalTitle = this.page.locator('span').filter({
-        hasText: /^地下錢莊$/
-      }).first();
-
-      const isModalVisible = await modalTitle.isVisible().catch(() => false);
-
-      if (!isModalVisible) {
-        this.log(11, "借/還錢", "Modal 未開啟", "嘗試自動開啟");
-        const openSuccess = await this.openLoanShark();
-        if (!openSuccess) {
-          this.log(11, "借/還錢", "失敗", "無法開啟地下錢莊");
-          return false;
-        }
+      // 2️⃣ 開啟地下錢莊 Modal
+      this.log(11, "借/還錢", "正在開啟 Modal", "");
+      const openSuccess = await this.openLoanShark();
+      if (!openSuccess) {
+        this.log(11, "借/還錢", "失敗", "無法開啟地下錢莊");
+        return false;
       }
-
-      this.log(11, "借/還錢", "Modal 已確認開啟", "");
+      this.log(11, "借/還錢", "Modal 已開啟", "");
 
       // 3️⃣ 檢查並切換模式（借/還）
       // 策略：DualColorSwitch 是自定義組件，結構為包含文字「借」或「還」的 div
@@ -1351,7 +1356,7 @@ export class GameActions {
       if (needSwitch) {
         await modeSwitchContainer.click();
         this.log(11, "借/還錢", "已切換模式", `從 ${isBorrowMode ? '借' : '還'} 切換至 ${action === 'BORROW' ? '借' : '還'}`);
-        await this.page.waitForTimeout(500); // 等待 UI 更新
+        await this.page.waitForTimeout(800); // 等待 UI 更新（增加延遲確保穩定）
       } else {
         this.log(11, "借/還錢", "模式已正確", `當前為 ${action === 'BORROW' ? '借款' : '還款'} 模式`);
       }
@@ -1470,6 +1475,8 @@ export class GameActions {
 
       // 8️⃣ 等待交易成功 Toast（antd-mobile 的 Toast 元件）
       // 注意：Toast 可能很快消失，使用較短的 timeout
+      await this.page.waitForTimeout(1000); // 等待 Toast 出現
+      
       const toastLocator = this.page.locator(".adm-toast").filter({
         hasText: /成功/
       }).first();
@@ -1487,22 +1494,20 @@ export class GameActions {
         if (hasError) {
           const errorMsg = await errorToast.textContent();
           this.log(11, "借/還錢", "失敗", `交易失敗: ${errorMsg}`);
+          // 仍需關閉 Modal
+          await this.closeLoanShark();
           return false;
         }
       }
 
-      // 9️⃣ 關閉 Modal（點擊右上角 X 按鈕）
-      // 策略：找到 CloseOutline 圖標的按鈕
-      const closeButton = this.page.locator('span[role="img"]').filter({
-        hasText: /close/i
-      }).or(
-        this.page.locator('svg').filter({
-          has: this.page.locator('path[d*="M"]') // SVG 路徑特徵
-        })
-      ).first();
-
-      // 9️⃣ 關閉 Modal
-      await this.closeLoanShark();
+      // 9️⃣ 關閉 Modal（呼叫 closeLoanShark 確保 UI 狀態一致）
+      this.log(11, "借/還錢", "正在關閉 Modal", "");
+      const closeSuccess = await this.closeLoanShark();
+      if (!closeSuccess) {
+        this.log(11, "借/還錢", "警告", "Modal 關閉失敗（可能已關閉）");
+      } else {
+        this.log(11, "借/還錢", "Modal 已關閉", "");
+      }
 
       this.log(11, "借/還錢", "成功", `${action === 'BORROW' ? '借款' : '還款'} $${amount}`);
       return true;

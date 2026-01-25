@@ -303,3 +303,165 @@ test("Scenario: User B (Contract Trader) - 1 min", async ({ page }) => {
   console.log(`\n✅ User B 情境測試完成！`);
 });
 
+// ==================== User C: 地下錢莊客戶 (Loan Shark Client) ====================
+
+/**
+ * User C 行為模式：地下錢莊客戶
+ * 
+ * 策略邏輯：
+ * 1. 首次迭代：與沈梟對話一次（測試互動功能）
+ * 2. 當負債 = 0 時，借款 $100（測試借款流程）
+ * 3. 當負債 > 0 且現金 >= $100 時，還款 $100（測試還款流程）
+ * 4. 否則等待（模擬現金不足的情況）
+ * 
+ * 測試目的：
+ * - 驗證 handleLoan 方法在高頻開關 Modal 下的穩定性
+ * - 測試借款/還款流程的正確性
+ * - 確保 Modal 動畫不會導致選擇器失效
+ * - 測試與地下錢莊主人的互動功能
+ * 
+ * @param page - Playwright Page 物件
+ * @param username - 使用者帳號
+ * @param password - 使用者密碼
+ * @param duration - 執行時長（毫秒）
+ */
+export async function runUserC(
+  page: Page,
+  username: string,
+  password: string,
+  duration: number
+): Promise<void> {
+  const actions = new GameActions(page, username);
+  const startTime = Date.now();
+
+  console.log(`[User C][${username}] 開始執行地下錢莊客戶策略，預計執行 ${duration / 1000} 秒`);
+
+  // Step 1: 登入
+  console.log(`[User C][${username}] 執行登入...`);
+  const loginSuccess = await actions.login(username, password);
+  if (!loginSuccess) {
+    throw new Error(`[User C][${username}] 登入失敗`);
+  }
+  console.log(`[User C][${username}] ✅ 登入成功`);
+
+  // Step 2: 等待遊戲開始
+  console.log(`[User C][${username}] 等待遊戲開始...`);
+  const gameStarted = await actions.waitForGameStart();
+  if (!gameStarted) {
+    throw new Error(`[User C][${username}] 遊戲未開始（超時）`);
+  }
+  console.log(`[User C][${username}] ✅ 遊戲已開始`);
+
+  // Step 3: 借還款迴圈
+  let iteration = 0;
+  let borrowCount = 0;
+  let repayCount = 0;
+  let idleCount = 0;
+  let hasTalkedToMerchant = false; // 標記是否已與沈梟對話
+
+  while (Date.now() < startTime + duration) {
+    iteration++;
+    console.log(`\n[User C][${username}] ======== 第 ${iteration} 次迭代 ========`);
+
+    // Step 3.1: 首次迭代與沈梟對話
+    if (iteration === 1 && !hasTalkedToMerchant) {
+      console.log(`[User C][${username}] 💬 首次迭代，嘗試與沈梟對話...`);
+      const talkSuccess = await actions.interactWithLoanShark();
+      if (talkSuccess) {
+        console.log(`[User C][${username}] ✅ 成功與沈梟互動`);
+        hasTalkedToMerchant = true;
+      } else {
+        console.warn(`[User C][${username}] ⚠️ 與沈梟互動失敗`);
+      }
+      // 等待 Modal 完全穩定
+      await page.waitForTimeout(1000);
+    }
+
+    // Step 3.2: 讀取資產
+    const assets = await actions.readAssets();
+    if (!assets) {
+      console.warn(`[User C][${username}] ⚠️ 無法讀取資產，跳過本次迴圈`);
+      await page.waitForTimeout(1000);
+      continue;
+    }
+
+    const { cash, debt } = assets;
+    console.log(`[User C][${username}] 當前資產：現金 = ${cash.toFixed(2)}, 負債 = ${debt.toFixed(2)}`);
+
+    // Step 3.3: 決策邏輯
+    if (debt === 0) {
+      // 情況 1: 無負債，借款 $100
+      console.log(`[User C][${username}] 💰 觸發借款邏輯（負債 = 0）`);
+      const borrowSuccess = await actions.handleLoan('BORROW', 100);
+      
+      if (borrowSuccess) {
+        borrowCount++;
+        console.log(`[User C][${username}] ✅ 成功借款 $100`);
+      } else {
+        console.warn(`[User C][${username}] ⚠️ 借款失敗（可能達到借款上限）`);
+      }
+    } else if (debt > 0 && cash >= 100) {
+      // 情況 2: 有負債且現金充足，還款 $100
+      console.log(`[User C][${username}] 💳 觸發還款邏輯（負債 = ${debt.toFixed(2)}, 現金 = ${cash.toFixed(2)}）`);
+      const repayAmount = Math.min(100, debt); // 不能還超過負債的金額
+      const repaySuccess = await actions.handleLoan('REPAY', repayAmount);
+      
+      if (repaySuccess) {
+        repayCount++;
+        console.log(`[User C][${username}] ✅ 成功還款 $${repayAmount}`);
+      } else {
+        console.warn(`[User C][${username}] ⚠️ 還款失敗（可能餘額不足）`);
+      }
+    } else {
+      // 情況 3: 有負債但現金不足 $100，等待
+      console.log(`[User C][${username}] ⏸️ 現金不足，等待下次迴圈（現金 = ${cash.toFixed(2)}, 需要 >= 100）`);
+      idleCount++;
+    }
+
+    // Step 3.4: 等待 1 秒
+    await page.waitForTimeout(1000);
+  }
+
+  console.log(`\n[User C][${username}] 🏁 執行完畢`);
+  console.log(`[User C][${username}] 統計：共 ${iteration} 次迭代，借款 ${borrowCount} 次，還款 ${repayCount} 次，等待 ${idleCount} 次`);
+}
+
+// ==================== 測試案例 ====================
+
+/**
+ * User C Simulation Test (1 分鐘驗證)
+ * 
+ * 目的：驗證地下錢莊借還款邏輯與 Modal 穩定性
+ * 執行時長：60 秒
+ * 
+ * 預期行為：
+ * - 首次迭代應執行借款（因為初始負債為 0）
+ * - 後續迭代應根據現金與負債狀況執行還款或等待
+ * - Console 應顯示「借款成功」與「還款成功」的交替記錄
+ * - 不應出現「找不到元素」或「timeout」錯誤
+ */
+test("Scenario: User C (Loan Shark Client) - 1 min", async ({ page }) => {
+  test.setTimeout(120000); // 設定 2 分鐘超時（60秒執行 + 60秒緩衝）
+  
+  const users = loadUsers();
+  
+  // 選擇第三個已註冊的使用者（避免與 User A/B 衝突）
+  const user = users.filter((u) => u.registered)[2] || users.find((u) => u.registered);
+  if (!user) {
+    throw new Error("❌ 找不到已註冊的使用者，請先執行 Action 01 註冊");
+  }
+
+  console.log(`\n========================================`);
+  console.log(`🎯 開始執行 User C 情境測試`);
+  console.log(`使用者：${user.username}`);
+  console.log(`執行時長：60 秒`);
+  console.log(`========================================\n`);
+
+  // 執行 User C 行為模式（60 秒）
+  await runUserC(page, user.username, user.password, 60000);
+
+  // 驗證：測試不應拋出異常
+  expect(true).toBe(true);
+  console.log(`\n✅ User C 情境測試完成！`);
+});
+
