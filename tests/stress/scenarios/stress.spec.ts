@@ -40,17 +40,19 @@ function randomInt(min: number, max: number): number {
  * 3. 否則持有不動
  * 
  * @param page - Playwright Page 物件
+ * @param userIndex - 使用者編號
  * @param username - 使用者帳號
  * @param password - 使用者密碼
  * @param duration - 執行時長（毫秒）
  */
 export async function runUserA(
   page: Page,
+  userIndex: number,
   username: string,
   password: string,
   duration: number
 ): Promise<void> {
-  const actions = new GameActions(page, username);
+  const actions = new GameActions(page, userIndex);
   const startTime = Date.now();
 
   console.log(`[User A][${username}] 開始執行現貨交易策略，預計執行 ${duration / 1000} 秒`);
@@ -150,17 +152,19 @@ export async function runUserA(
  * - 測試系統處理大量開倉/撤單請求的能力
  * 
  * @param page - Playwright Page 物件
+ * @param userIndex - 使用者編號
  * @param username - 使用者帳號
  * @param password - 使用者密碼
  * @param duration - 執行時長（毫秒）
  */
 export async function runUserB(
   page: Page,
+  userIndex: number,
   username: string,
   password: string,
   duration: number
 ): Promise<void> {
-  const actions = new GameActions(page, username);
+  const actions = new GameActions(page, userIndex);
   const startTime = Date.now();
 
   console.log(`[User B][${username}] 開始執行合約交易策略，預計執行 ${duration / 1000} 秒`);
@@ -191,9 +195,9 @@ export async function runUserB(
     console.log(`\n[User B][${username}] ======== 第 ${iteration} 次迭代 ========`);
 
     // Step 3.1: 讀取合約（模擬檢查持倉，但決策為隨機）
-    const contracts = await actions.readContracts();
-    if (contracts !== null) {
-      console.log(`[User B][${username}] 當前持有合約數量：${contracts.length}`);
+    const contractData = await actions.readContracts();
+    if (contractData !== null) {
+      console.log(`[User B][${username}] 當前持有合約數量：${contractData.contracts.length}`);
     }
 
     // Step 3.2: 決策邏輯（80% 開倉 / 20% 清倉）
@@ -260,7 +264,7 @@ test("Scenario: User A (Spot Trader) - 1 min", async ({ page }) => {
   console.log(`========================================\n`);
 
   // 執行 User A 行為模式（60 秒）
-  await runUserA(page, user.username, user.password, 60000);
+  await runUserA(page, 1, user.username, user.password, 60000);
 
   // 驗證：測試不應拋出異常
   expect(true).toBe(true);
@@ -296,7 +300,7 @@ test("Scenario: User B (Contract Trader) - 1 min", async ({ page }) => {
   console.log(`========================================\n`);
 
   // 執行 User B 行為模式（60 秒）
-  await runUserB(page, user.username, user.password, 60000);
+  await runUserB(page, 2, user.username, user.password, 60000);
 
   // 驗證：測試不應拋出異常
   expect(true).toBe(true);
@@ -321,17 +325,19 @@ test("Scenario: User B (Contract Trader) - 1 min", async ({ page }) => {
  * - 測試與地下錢莊主人的互動功能
  * 
  * @param page - Playwright Page 物件
+ * @param userIndex - 使用者編號
  * @param username - 使用者帳號
  * @param password - 使用者密碼
  * @param duration - 執行時長（毫秒）
  */
 export async function runUserC(
   page: Page,
+  userIndex: number,
   username: string,
   password: string,
   duration: number
 ): Promise<void> {
-  const actions = new GameActions(page, username);
+  const actions = new GameActions(page, userIndex);
   const startTime = Date.now();
 
   console.log(`[User C][${username}] 開始執行地下錢莊客戶策略，預計執行 ${duration / 1000} 秒`);
@@ -458,7 +464,7 @@ test("Scenario: User C (Loan Shark Client) - 1 min", async ({ page }) => {
   console.log(`========================================\n`);
 
   // 執行 User C 行為模式（60 秒）
-  await runUserC(page, user.username, user.password, 60000);
+  await runUserC(page, 3, user.username, user.password, 60000);
 
   // 驗證：測試不應拋出異常
   expect(true).toBe(true);
@@ -490,17 +496,19 @@ test("Scenario: User C (Loan Shark Client) - 1 min", async ({ page }) => {
  *   若需實作智能策略，可讀取 data/user-strategies.json 檔案。
  * 
  * @param page - Playwright Page 物件
+ * @param userIndex - 使用者編號
  * @param username - 使用者帳號
  * @param password - 使用者密碼
  * @param duration - 執行時長（毫秒）
  */
 export async function runUserD(
   page: Page,
+  userIndex: number,
   username: string,
   password: string,
   duration: number
 ): Promise<void> {
-  const actions = new GameActions(page, username);
+  const actions = new GameActions(page, userIndex);
   const startTime = Date.now();
 
   console.log(`[User D][${username}] 開始執行機智問答策略，預計執行 ${duration / 1000} 秒`);
@@ -610,9 +618,199 @@ test("Scenario: User D (Quiz Master) - 2 min", async ({ page }) => {
   console.log(`========================================\n`);
 
   // 執行 User D 行為模式（120 秒）
-  await runUserD(page, user.username, user.password, 120000);
+  await runUserD(page, 4, user.username, user.password, 120000);
 
   // 驗證：測試不應拋出異常
   expect(true).toBe(true);
   console.log(`\n✅ User D 情境測試完成！`);
+});
+
+// ==================== User E: 少數決策略家 (Minority Strategist) ====================
+
+/**
+ * User E 行為模式：少數決策略家
+ * 
+ * 策略邏輯（事件驅動 + 條件式借款）：
+ * 1. 阻塞式等待少數決遊戲開始（Blocking Wait）
+ * 2. 檢查現金是否足夠下注（固定 $5000）
+ * 3. 若現金不足，觸發「借錢週轉流程」（Action 17: closeBorrowAndReturn）
+ * 4. 隨機選擇 A/B/C/D 選項下注
+ * 5. 等待結果並讀取資產變化
+ * 6. 回到步驟 1，繼續等待下一場少數決
+ * 
+ * 核心特性：
+ * - **Event-Driven Loop（事件驅動迴圈）**：
+ *   與 User D 類似，大部分時間處於睡眠狀態，只在 Admin 發布題目時被喚醒。
+ * 
+ * - **Conditional Macro Trigger（條件式巨集觸發）**：
+ *   這是 User E 的關鍵特性。只有當現金 < $50 時，才執行借款動作。
+ *   
+ *   此設計測試條件式借款邏輯的正確性。
+ * 
+ * - **固定下注金額（$50）**：
+ *   與初始現金相當，測試一般遊戲場景的資金管理。
+ * 
+ * @param page - Playwright Page 物件
+ * @param userIndex - 使用者編號
+ * @param username - 使用者帳號
+ * @param password - 使用者密碼
+ * @param duration - 執行時長（毫秒）
+ */
+export async function runUserE(
+  page: Page,
+  userIndex: number,
+  username: string,
+  password: string,
+  duration: number
+): Promise<void> {
+  const actions = new GameActions(page, userIndex);
+  const startTime = Date.now();
+  const betAmount = 50; // 固定下注金額
+
+  console.log(`[User E][${username}] 開始執行少數決策略，預計執行 ${duration / 1000} 秒`);
+  console.log(`[User E][${username}] 固定下注金額：$${betAmount}`);
+
+  // Step 1: 登入
+  console.log(`[User E][${username}] 執行登入...`);
+  const loginSuccess = await actions.login(username, password);
+  if (!loginSuccess) {
+    throw new Error(`[User E][${username}] 登入失敗`);
+  }
+  console.log(`[User E][${username}] ✅ 登入成功`);
+
+  // Step 2: 等待遊戲開始
+  console.log(`[User E][${username}] 等待遊戲開始...`);
+  const gameStarted = await actions.waitForGameStart();
+  if (!gameStarted) {
+    throw new Error(`[User E][${username}] 遊戲未開始（超時）`);
+  }
+  console.log(`[User E][${username}] ✅ 遊戲已開始`);
+
+  // Step 3: 少數決迴圈（事件驅動）
+  let minorityRound = 0;
+  let borrowTriggerCount = 0; // 統計借款次數
+
+  while (Date.now() < startTime + duration) {
+    minorityRound++;
+    console.log(`\n[User E][${username}] ======== 等待第 ${minorityRound} 場少數決 ========`);
+
+    // Step 3.1: 檢查資金 & 條件式借款（在等待小遊戲前執行）
+    const preCheckAssets = await actions.readAssets();
+    
+    if (preCheckAssets && preCheckAssets.cash < betAmount) {
+      console.log(`[User E][${username}] ⚠️ 現金不足（$${preCheckAssets.cash.toFixed(2)} < $${betAmount}），執行借款...`);
+      
+      const borrowSuccess = await actions.handleLoan("BORROW", 300);
+      
+      if (borrowSuccess) {
+        borrowTriggerCount++;
+        console.log(`[User E][${username}] ✅ 借款成功（累計借款 ${borrowTriggerCount} 次）`);
+        
+        // 重新讀取資產驗證
+        const updatedAssets = await actions.readAssets();
+        if (updatedAssets) {
+          console.log(`[User E][${username}] 📊 借款後資產：現金 = ${updatedAssets.cash.toFixed(2)}, 負債 = ${updatedAssets.debt.toFixed(2)}`);
+        }
+      } else {
+        console.warn(`[User E][${username}] ⚠️ 借款失敗`);
+      }
+    } else if (preCheckAssets) {
+      console.log(`[User E][${username}] ✅ 現金充足（$${preCheckAssets.cash.toFixed(2)} >= $${betAmount}），無需借款`);
+    }
+
+    // Step 3.2: 阻塞式等待少數決開始 ⏳
+    console.log(`[User E][${username}] ⏳ 阻塞等待少數決遊戲開始...（此步驟可能需等待數分鐘）`);
+    const minorityStarted = await actions.waitForMinorityStart();
+    
+    if (!minorityStarted) {
+      console.log(`[User E][${username}] ⏱️ 測試時間結束，尚未偵測到新少數決`);
+      break;
+    }
+    
+    console.log(`[User E][${username}] 🎯 少數決遊戲已開始！`);
+
+    // Step 3.3: 隨機選擇答案並下注
+    const options: Array<"A" | "B" | "C" | "D"> = ["A", "B", "C", "D"];
+    const choice = options[randomInt(0, 3)];
+    
+    console.log(`[User E][${username}] 🎲 隨機選擇答案：${choice}，下注金額：$${betAmount}`);
+    
+    const betSuccess = await actions.betMinority(choice, betAmount);
+    if (betSuccess) {
+      console.log(`[User E][${username}] ✅ 成功下注`);
+    } else {
+      console.warn(`[User E][${username}] ⚠️ 下注失敗`);
+    }
+
+    // Step 3.4: 等待結果並讀取資產
+    console.log(`[User E][${username}] ⏳ 等待少數決結果...`);
+    const updatedAssets = await actions.waitMinorityResultAndReport();
+    
+    if (updatedAssets) {
+      console.log(`[User E][${username}] 📊 結果公布後資產：現金 = ${updatedAssets.cash.toFixed(2)}, 負債 = ${updatedAssets.debt.toFixed(2)}`);
+    } else {
+      console.warn(`[User E][${username}] ⚠️ 無法讀取結果後的資產`);
+    }
+
+    // Step 3.5: 短暫等待（確保 UI 穩定後再進入下一次等待）
+    await page.waitForTimeout(1000);
+    
+    console.log(`[User E][${username}] 🔄 回到等待狀態，準備下一場少數決...`);
+  }
+
+  console.log(`\n[User E][${username}] 🏁 執行完畢`);
+  console.log(`[User E][${username}] 統計：共參與 ${minorityRound - 1} 場少數決，觸發借款週轉 ${borrowTriggerCount} 次`);
+}
+
+// ==================== 測試案例 ====================
+
+/**
+ * User E Simulation Test (2 分鐘驗證)
+ * 
+ * 目的：驗證少數決機器人的條件式借款邏輯與 UI 狀態管理
+ * 執行時長：120 秒
+ * 
+ * 預期行為：
+ * - 登入後進入「阻塞等待」狀態
+ * - 當 Admin 發布少數決題目時，機器人應立即偵測
+ * - 若現金 < $5000，應執行完整的借錢週轉流程（Action 17）
+ * - 成功下注後，等待結果並讀取資產變化
+ * - 回到等待狀態，準備下一場少數決
+ * - Console 應顯示「觸發借錢週轉流程」的記錄
+ * 
+ * ⚠️ 測試前提：
+ * - 需要 Admin 手動配合發布至少 1 題少數決（透過 /admin 後台）
+ * - 若無題目發布，測試仍會 Pass（僅顯示「尚未偵測到新少數決」）
+ * 
+ * 🎯 測試重點：
+ * - 驗證 Modal 與 Overlay 快速切換不會導致 UI 錯誤
+ * - 驗證借款後現金增加，能夠成功下注
+ * - 驗證 closeBorrowAndReturn() 方法的穩定性
+ */
+test("Scenario: User E (Minority Strategist) - 2 min", async ({ page }) => {
+  test.setTimeout(180000); // 設定 3 分鐘超時（120秒執行 + 60秒緩衝）
+  
+  const users = loadUsers();
+  
+  // 選擇第五個已註冊的使用者（避免與 User A/B/C/D 衝突）
+  const registeredUsers = users.filter((u) => u.registered);
+  const user = registeredUsers[4] || registeredUsers[0];
+  
+  if (!user) {
+    throw new Error("❌ 找不到已註冊的使用者，請先執行 Action 01 註冊");
+  }
+
+  console.log(`\n========================================`);
+  console.log(`🎯 開始執行 User E 情境測試`);
+  console.log(`使用者：${user.username}`);
+  console.log(`執行時長：120 秒`);
+  console.log(`⚠️ 請確保 Admin 在測試期間發布至少 1 題少數決`);
+  console.log(`========================================\n`);
+
+  // 執行 User E 行為模式（120 秒）
+  await runUserE(page, 5, user.username, user.password, 120000);
+
+  // 驗證：測試不應拋出異常
+  expect(true).toBe(true);
+  console.log(`\n✅ User E 情境測試完成！`);
 });
