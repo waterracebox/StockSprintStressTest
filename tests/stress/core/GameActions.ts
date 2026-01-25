@@ -2239,7 +2239,84 @@ export class GameActions {
    * 關閉小遊戲 → 開錢莊 → 借錢 → 關錢莊 → 回小遊戲
    */
   async closeBorrowAndReturn(): Promise<boolean> {
-    /* TODO: Complex Flow */ return false;
+    this.log(17, "借錢週轉流程", "開始", "執行複合動作");
+
+    try {
+      // 1️⃣ 最小化小遊戲 Overlay（點擊「收起」按鈕）
+      this.log(17, "借錢週轉流程", "步驟 1", "尋找收起按鈕");
+      const collapseButton = this.page.locator('button').filter({
+        hasText: /^收起$/
+      }).first();
+
+      await collapseButton.waitFor({ state: "visible", timeout: 5000 });
+      await collapseButton.click();
+      this.log(17, "借錢週轉流程", "步驟 1 完成", "已點擊收起按鈕");
+
+      // 2️⃣ 等待小遊戲 Overlay 消失
+      await this.page.waitForTimeout(800);
+      this.log(17, "借錢週轉流程", "步驟 2 完成", "小遊戲已收起");
+
+      // 3️⃣ 開啟地下錢莊（重用 Action 10）
+      this.log(17, "借錢週轉流程", "步驟 3", "開啟地下錢莊");
+      const openResult = await this.openLoanShark();
+      if (!openResult) {
+        this.log(17, "借錢週轉流程", "失敗", "無法開啟地下錢莊");
+        return false;
+      }
+      this.log(17, "借錢週轉流程", "步驟 3 完成", "地下錢莊已開啟");
+
+      // 4️⃣ 執行借款（重用 Action 11，借固定金額 300）
+      this.log(17, "借錢週轉流程", "步驟 4", "執行借款 $300");
+      const borrowResult = await this.handleLoan("BORROW", 300);
+      if (!borrowResult) {
+        this.log(17, "借錢週轉流程", "失敗", "借款操作失敗");
+        return false;
+      }
+      this.log(17, "借錢週轉流程", "步驟 4 完成", "借款成功，錢莊已關閉");
+
+      // 5️⃣ 重新開啟小遊戲 Overlay（點擊「小遊戲」按鈕）
+      this.log(17, "借錢週轉流程", "步驟 5", "尋找小遊戲按鈕");
+      const miniGameButton = this.page.locator('button').filter({
+        hasText: /小遊戲/
+      }).first();
+
+      await miniGameButton.waitFor({ state: "visible", timeout: 5000 });
+      await miniGameButton.click();
+      this.log(17, "借錢週轉流程", "步驟 5 完成", "已點擊小遊戲按鈕");
+
+      // 6️⃣ 等待小遊戲 Overlay 重新出現（以「全場少數決」文字為標記）
+      await this.page.waitForTimeout(800);
+      const minorityTitle = this.page.locator('div').filter({
+        hasText: /全場少數決/
+      }).first();
+
+      await minorityTitle.waitFor({ state: "visible", timeout: 5000 });
+      this.log(17, "借錢週轉流程", "步驟 6 完成", "小遊戲 Overlay 已恢復");
+
+      this.log(17, "借錢週轉流程", "成功", "所有步驟完成");
+      return true;
+
+    } catch (error: any) {
+      this.log(17, "借錢週轉流程", "失敗", error.message);
+      
+      // 失敗時截圖存證
+      try {
+        const screenshotDir = path.join(__dirname, "../../test-results/action-errors");
+        if (!fs.existsSync(screenshotDir)) {
+          fs.mkdirSync(screenshotDir, { recursive: true });
+        }
+        const screenshotPath = path.join(
+          screenshotDir,
+          `action-17-borrow-flow-error-${Date.now()}.png`
+        );
+        await this.page.screenshot({ path: screenshotPath, fullPage: true });
+        this.log(17, "借錢週轉流程", "已截圖", screenshotPath);
+      } catch (screenshotError) {
+        // 截圖失敗不影響主流程
+      }
+
+      return false;
+    }
   }
 
   /**
